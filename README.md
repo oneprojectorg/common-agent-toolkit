@@ -1,24 +1,39 @@
-# common-skills
+# common-harness
 
-Agent skills for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
+Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-Skills follow the [Agent Skills](https://agentskills.io/) format and can be installed with the [`skills`](https://www.npmjs.com/package/skills) CLI.
+One install gives engineers the full agent harness for this codebase: 11 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
-## Installation
+## Install
 
-Install all skills:
+Once per machine, add the marketplace and install the plugin:
 
-```bash
-npx skills add oneprojectorg/common-skills
+```text
+/plugin marketplace add git@github.com:oneprojectorg/common-harness.git
+/plugin install common-toolkit@common-harness
 ```
 
-Install a single skill:
+Both commands run inside Claude Code. The marketplace add clones this repo to `~/.claude/plugins/cache/`; the install wires the skills and hooks into Claude Code via the cached copy. Works with private GitHub repos through your existing `gh` / SSH auth.
 
-```bash
-npx skills add oneprojectorg/common-skills --skill access-control
+## Updating
+
+```text
+/plugin marketplace update common-harness
 ```
 
-## Available skills
+Pulls the latest from this repo and re-syncs installed plugins. No re-install needed.
+
+To refresh the vendored Vercel skill from upstream:
+
+```bash
+bash scripts/sync-vercel.sh
+```
+
+Then commit the resulting diff.
+
+## What's in the toolkit
+
+### Skills
 
 | Skill | What it covers |
 |---|---|
@@ -28,33 +43,41 @@ npx skills add oneprojectorg/common-skills --skill access-control
 | `component-file-structure` | Conventions for organizing a React component file. |
 | `drizzle-migrations` | Drizzle ORM workflow for schema edits and migrations. |
 | `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`. |
-| `implement-task` | End-to-end implementation flow for a claimed Asana task (BUG MODE, plan review, RGR loop, gate suite). |
+| `implement-task` | End-to-end implementation flow for a claimed Asana task. |
 | `op-ui-conventions` | Using `@op/ui`, design tokens, and the type scale. |
 | `pickup-task` | Pick up the next available Agent task from Asana and claim it atomically. |
-| `release` | Open the dev → main release PR (the one flow allowed past the protected-branch hook, via the `CLAUDE_RELEASE=1` marker). Invokable as `/release`. |
+| `release` | Open the dev → main release PR (invokable as `/release`). |
+| `vercel-react-best-practices` | Vendored from [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — React/Next.js performance rules. MIT-licensed; refreshed via `scripts/sync-vercel.sh`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
 
-See each skill's `SKILL.md` for the full body.
+### Hooks (`PreToolUse` on `Bash`)
 
-## Related skill collections
-
-- [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — Vercel's official collection, including `vercel-react-best-practices`. Install with:
-
-  ```bash
-  npx skills add vercel-labs/agent-skills --skill vercel-react-best-practices
-  ```
+- `block-protected-branches.sh` — refuses `git`/`gh` commands targeting `main` or `dev` (with the `CLAUDE_RELEASE=1` marker as the single dev → main PR exception).
+- `require-feature-branch.sh` — refuses commits while HEAD is on a protected branch.
 
 ## Layout
 
 ```
-skills/
-└── <skill-name>/
-    └── SKILL.md     # YAML frontmatter (name, description) + body
+common-harness/
+├── .claude-plugin/
+│   └── marketplace.json
+├── plugins/
+│   └── common-toolkit/
+│       ├── .claude-plugin/plugin.json
+│       ├── skills/<name>/SKILL.md
+│       └── hooks/
+│           ├── hooks.json
+│           ├── block-protected-branches.sh
+│           └── require-feature-branch.sh
+├── scripts/
+│   └── sync-vercel.sh
+├── README.md
+└── LICENSE
 ```
 
 ## Authoring a new skill
 
-1. Create `skills/<name>/SKILL.md`.
+1. Create `plugins/common-toolkit/skills/<name>/SKILL.md`.
 2. Frontmatter must include `name` and `description`. Keep the description specific — the agent uses it to decide when to load the skill.
 
    ```markdown
@@ -67,7 +90,8 @@ skills/
    ```
 
 3. Optional supporting files (`scripts/`, `references/`, etc.) live next to `SKILL.md` in the same folder.
+4. Add a row in the README table above.
 
 ## License
 
-MIT
+MIT. The vendored `vercel-react-best-practices` skill retains its upstream MIT license; see its `SKILL.md` frontmatter for attribution.

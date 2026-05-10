@@ -1,0 +1,14 @@
+{
+  "name": "common-harness",
+  "owner": {
+    "name": "One Project",
+    "url": "https://github.com/oneprojectorg"
+  },
+  "plugins": [
+    {
+      "name": "common-toolkit",
+      "source": "./plugins/common-toolkit",
+      "description": "Skills, hooks, and conventions for the One Project common monorepo. Bundles 11 in-house skills plus a vendored copy of Vercel's react-best-practices skill, and the two protected-branch hooks."
+    }
+  ]
+}
