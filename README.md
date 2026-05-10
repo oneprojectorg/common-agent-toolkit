@@ -31,6 +31,7 @@ npx skills add oneprojectorg/common-skills --skill access-control
 | `implement-task` | End-to-end implementation flow for a claimed Asana task (BUG MODE, plan review, RGR loop, gate suite). |
 | `op-ui-conventions` | Using `@op/ui`, design tokens, and the type scale. |
 | `pickup-task` | Pick up the next available Agent task from Asana and claim it atomically. |
+| `release` | Open the dev → main release PR (the one flow allowed past the protected-branch hook, via the `CLAUDE_RELEASE=1` marker). Invokable as `/release`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
 
 See each skill's `SKILL.md` for the full body.
