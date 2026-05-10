@@ -1,9 +1,0 @@
-{
-  "name": "common-toolkit",
-  "description": "Skills, hooks, and conventions for working in the One Project common monorepo.",
-  "version": "0.1.0",
-  "author": {
-    "name": "One Project",
-    "url": "https://github.com/oneprojectorg"
-  }
-}

@@ -10,7 +10,7 @@ Once per machine, add the marketplace and install the plugin:
 
 ```text
 /plugin marketplace add git@github.com:oneprojectorg/common-agent-toolkit.git
-/plugin install common-toolkit@common-agent-toolkit
+/plugin install devtools@common-agent-toolkit
 ```
 
 Both commands run inside Claude Code. The marketplace add clones this repo to `~/.claude/plugins/cache/`; the install wires the skills and hooks into Claude Code via the cached copy. Works with private GitHub repos through your existing `gh` / SSH auth.
@@ -62,7 +62,7 @@ common-agent-toolkit/
 ├── .claude-plugin/
 │   └── marketplace.json
 ├── plugins/
-│   └── common-toolkit/
+│   └── devtools/
 │       ├── .claude-plugin/plugin.json
 │       ├── skills/<name>/SKILL.md
 │       └── hooks/
@@ -77,7 +77,7 @@ common-agent-toolkit/
 
 ## Authoring a new skill
 
-1. Create `plugins/common-toolkit/skills/<name>/SKILL.md`.
+1. Create `plugins/devtools/skills/<name>/SKILL.md`.
 2. Frontmatter must include `name` and `description`. Keep the description specific — the agent uses it to decide when to load the skill.
 
    ```markdown
