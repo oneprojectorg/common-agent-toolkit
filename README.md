@@ -1,4 +1,4 @@
-# common-harness
+# common-agent-toolkit
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
@@ -9,8 +9,8 @@ One install gives engineers the full agent harness for this codebase: 11 in-hous
 Once per machine, add the marketplace and install the plugin:
 
 ```text
-/plugin marketplace add git@github.com:oneprojectorg/common-harness.git
-/plugin install common-toolkit@common-harness
+/plugin marketplace add git@github.com:oneprojectorg/common-agent-toolkit.git
+/plugin install common-toolkit@common-agent-toolkit
 ```
 
 Both commands run inside Claude Code. The marketplace add clones this repo to `~/.claude/plugins/cache/`; the install wires the skills and hooks into Claude Code via the cached copy. Works with private GitHub repos through your existing `gh` / SSH auth.
@@ -18,7 +18,7 @@ Both commands run inside Claude Code. The marketplace add clones this repo to `~
 ## Updating
 
 ```text
-/plugin marketplace update common-harness
+/plugin marketplace update common-agent-toolkit
 ```
 
 Pulls the latest from this repo and re-syncs installed plugins. No re-install needed.
@@ -58,7 +58,7 @@ Then commit the resulting diff.
 ## Layout
 
 ```
-common-harness/
+common-agent-toolkit/
 ├── .claude-plugin/
 │   └── marketplace.json
 ├── plugins/
