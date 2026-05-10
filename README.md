@@ -1,6 +1,6 @@
 # common-skills
 
-Agent skills for the [One Project `common`](https://github.com/oneproject/common) monorepo.
+Agent skills for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
 Skills follow the [Agent Skills](https://agentskills.io/) format and can be installed with the [`skills`](https://www.npmjs.com/package/skills) CLI.
 
@@ -9,16 +9,14 @@ Skills follow the [Agent Skills](https://agentskills.io/) format and can be inst
 Install all skills:
 
 ```bash
-npx skills add oneproject/common-skills
+npx skills add oneprojectorg/common-skills
 ```
 
 Install a single skill:
 
 ```bash
-npx skills add oneproject/common-skills --skill access-control
+npx skills add oneprojectorg/common-skills --skill access-control
 ```
-
-> Replace `oneproject/common-skills` with the actual `org/repo` once published.
 
 ## Available skills
 
