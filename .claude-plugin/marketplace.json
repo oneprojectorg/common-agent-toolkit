@@ -8,7 +8,7 @@
     {
       "name": "devtools",
       "source": "./plugins/devtools",
-      "description": "Developer skills, hooks, and conventions for the One Project common monorepo. Bundles 11 in-house skills plus a vendored copy of Vercel's react-best-practices skill, and the two protected-branch hooks."
+      "description": "Developer skills, hooks, and conventions for the One Project common monorepo. Bundles 13 in-house skills plus a vendored copy of Vercel's react-best-practices skill, and the two protected-branch hooks."
     }
   ]
 }
