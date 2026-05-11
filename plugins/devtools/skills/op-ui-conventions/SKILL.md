@@ -1,6 +1,6 @@
 ---
 name: op-ui-conventions
-description: How to use the @op/ui component library, design tokens, and the type scale. Use whenever rendering UI in apps/app or any package that imports React.
+description: Use the @op/ui component library, design tokens, and type scale. Triggers when writing JSX/TSX, adding a Button/Heading/Card/Modal/Input, picking a Tailwind color or font size, importing from @op/ui, or editing packages/ui or apps/app/src. Trigger phrases — "add a button", "use a heading", "what color", "what font size", "tailwind class", "@op/ui", "design token", "primary-teal", "neutral-gray", "text-title", "bg-".
 ---
 
 ## Components

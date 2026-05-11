@@ -1,6 +1,6 @@
 ---
 name: component-file-structure
-description: Conventions for organizing a React component file in this repo. Use when creating or refactoring a component.
+description: React component file organization — type placement, main export location, helper location. Triggers when creating a new .tsx file, splitting a large component, extracting a helper, or moving types. Trigger phrases — "new component", "create a component", "refactor this component", "where to put", "file structure", "component file", "extract helper", "split component".
 ---
 
 ## Order inside a file

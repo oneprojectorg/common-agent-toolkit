@@ -1,6 +1,6 @@
 ---
 name: vercel-react-best-practices
-description: React and Next.js performance optimization guidelines from Vercel Engineering. This skill should be used when writing, reviewing, or refactoring React/Next.js code to ensure optimal performance patterns. Triggers on tasks involving React components, Next.js pages, data fetching, bundle optimization, or performance improvements.
+description: React/Next.js performance guidelines from Vercel Engineering. Triggers when writing, reviewing, or refactoring React/Next.js code. Trigger phrases — "server component", "client component", "use client", "use server", "RSC", "useMemo", "useCallback", "useEffect", "suspense", "streaming", "dynamic import", "next/image", "next/link", "metadata", "loading.tsx", "error.tsx", "bundle size", "hydration", "React performance", "rerender".
 license: MIT
 metadata:
   author: vercel
