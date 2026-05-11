@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 11 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
+One install gives engineers the full agent harness for this codebase: 13 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
 ## Install
 
@@ -41,12 +41,14 @@ Then commit the resulting diff.
 | `asana-api` | Talking to Asana directly via the REST API. |
 | `branch-and-pr` | Branching and pull-request workflow. |
 | `component-file-structure` | Conventions for organizing a React component file. |
+| `dev-environment` | Local dev stack — docker layout, port map, `.env.local` vs `.env.docker`, Supabase Studio + Mailpit, driving the running app from Playwright. |
 | `drizzle-migrations` | Drizzle ORM workflow for schema edits and migrations. |
 | `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`. |
 | `implement-task` | End-to-end implementation flow for a claimed Asana task. |
 | `op-ui-conventions` | Using `@op/ui`, design tokens, and the type scale. |
 | `pickup-task` | Pick up the next available Agent task from Asana and claim it atomically. |
 | `release` | Open the dev → main release PR (invokable as `/release`). |
+| `test-conventions` | Vitest vs Playwright layout, `.test.ts` vs `.spec.ts`, the E2E env shim, and choosing which kind of test to add. |
 | `vercel-react-best-practices` | Vendored from [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — React/Next.js performance rules. MIT-licensed; refreshed via `scripts/sync-vercel.sh`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
 

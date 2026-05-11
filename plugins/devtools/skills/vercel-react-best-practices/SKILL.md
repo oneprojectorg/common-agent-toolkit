@@ -131,11 +131,14 @@ Reference these guidelines when:
 
 ## How to Use
 
-Read individual rule files for detailed explanations and code examples:
+The body above is just the index. To apply a rule, read the individual
+file under `rules/<rule-name>.md` — that's where the explanation,
+incorrect example, and correct example live. Examples:
 
 ```
 rules/async-parallel.md
 rules/bundle-barrel-imports.md
+rules/rerender-derived-state-no-effect.md
 ```
 
 Each rule file contains:
@@ -144,6 +147,7 @@ Each rule file contains:
 - Correct code example with explanation
 - Additional context and references
 
-## Full Compiled Document
-
-For the complete guide with all rules expanded: `AGENTS.md`
+Prefer reading the specific `rules/*.md` files you need over the
+compiled `AGENTS.md`. `AGENTS.md` is ~100KB and concatenates every
+rule — useful as a single-file dump for a fresh agent context, not as
+day-to-day reference.

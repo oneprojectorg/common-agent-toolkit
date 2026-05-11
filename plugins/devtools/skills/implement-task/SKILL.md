@@ -1,6 +1,6 @@
 ---
 name: implement-task
-description: End-to-end implementation flow for a claimed Asana task — BUG MODE (/investigate), PLAN REVIEW (/autoplan), exploration with downstream test scan, RGR execution, and the gate suite (typecheck/test/e2e/fallow + task-specific verification). Use after the task is claimed and a feature branch is checked out.
+description: End-to-end implementation flow for a claimed Asana task — BUG MODE (/investigate), PLAN REVIEW (/autoplan), exploration with downstream test scan, RGR execution, and the gate suite (typecheck/test/e2e/fallow + task-specific verification). Triggers after a task is claimed and a feature branch is checked out, or whenever the caller asks to drive an existing task to ready-for-review. Trigger phrases — "implement task", "implement-task", "work the task", "drive the task", "finish the task", "claimed task", "$TASK_ID", "RGR", "red green refactor", "gate suite", "feedback loops".
 ---
 
 Drives a single Asana task from claimed → ready-for-review.
@@ -93,10 +93,12 @@ synthetic tests. For docs- or config-only changes, skip RGR.
 
 ## Step 6 — FEEDBACK LOOPS
 
-Before each commit:
+Before each commit (format only the files you changed — `pnpm format`
+without `:changes` is denied in `.claude/settings.json` because it
+rewrites the whole tree):
 
 ```bash
-pnpm format
+pnpm format:changes
 ```
 
 Before signaling complete (run all of them; do NOT cherry-pick):
@@ -105,8 +107,12 @@ Before signaling complete (run all of them; do NOT cherry-pick):
 pnpm typecheck
 pnpm test
 pnpm e2e                          # playwright; pnpm test does NOT include this
-npx fallow audit --format json    # verdict must be "pass"
 ```
+
+Then run the fallow audit via the MCP — `mcp__fallow__audit` (verdict
+must be `"pass"`). If the fallow MCP isn't registered on this machine,
+fall back to `npx fallow audit --format json`; the verdict field is
+the same.
 
 Skip `pnpm e2e` only when the diff has no UI / route / API
 surface. Note the reason in the commit message; the reviewer

@@ -24,7 +24,7 @@ The primary export should never be buried at the bottom under utilities.
 
 ## Performance
 
-When writing or refactoring components, follow the `vercel-react-best-practices` skill (in `.claude/skills/vercel-react-best-practices/`). It's the source of truth for waterfall avoidance, bundle size, server/client data fetching, re-render and rendering performance. Cross-reference its rules (e.g. `async-parallel`, `bundle-barrel-imports`, `rerender-derived-state-no-effect`) before reaching for `useEffect`, before adding a barrel import, and before chaining `await`s.
+When writing or refactoring components, follow the `vercel-react-best-practices` skill. It's the source of truth for waterfall avoidance, bundle size, server/client data fetching, re-render and rendering performance. Cross-reference its rules (e.g. `async-parallel`, `bundle-barrel-imports`, `rerender-derived-state-no-effect`) before reaching for `useEffect`, before adding a barrel import, and before chaining `await`s.
 
 ## If statements
 

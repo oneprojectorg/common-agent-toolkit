@@ -1,19 +1,22 @@
 ---
 name: branch-and-pr
-description: Branching and pull-request workflow. Use whenever about to commit or push.
+description: Branching and pull-request workflow. Triggers before any commit or push, and when opening a PR. Trigger phrases — "commit", "push", "open a PR", "pull request", "feature branch", "branch name", "gh pr create", "git push", "rebase onto dev", "merge dev", "force push", "release".
 ---
 
 ## Rules
 
-- **Never commit directly to `main` or `dev`.** Both are protected by `.claude/hooks/`.
-- All work happens on a feature branch off `dev`. Naming: `<short-slug>`.
+- **Never commit directly to `main` or `dev`.** Both are protected by the plugin hooks (`block-protected-branches.sh`, `require-feature-branch.sh`).
+- All work happens on a feature branch off `dev`. Naming: `issue-<task_gid>` — the literal `issue-` prefix plus the Asana task gid. Single convention for humans and agents alike. Two reasons it's a hard rule:
+  1. Anyone (or any agent) opening a branch for the same task derives the same name, so parallel pickups coordinate instead of forking.
+  2. Reviewers can map a branch back to its task at a glance without grepping the PR description.
+  If there genuinely isn't an Asana task, create one first — that's the entry point for any non-trivial change.
 - Open a pull request targeting `dev`. Releases from `dev` to `main` go through `/release`.
 
 ## Workflow
 
-1. `git checkout -b my-thing` (off `dev`).
+1. `git checkout -b "issue-$TASK_GID"` (off `dev`).
 2. Make edits, commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`.
-3. Push the feature branch: `git push -u origin my-thing`.
+3. Push the feature branch: `git push -u origin "issue-$TASK_GID"`.
 4. Open the PR with `gh pr create --base dev`.
 5. Never `git push --force` to a shared branch unless you are rebasing. If you must rewrite history, do it on your own feature branch only.
 

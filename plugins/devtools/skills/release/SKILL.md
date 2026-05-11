@@ -1,6 +1,6 @@
 ---
 name: release
-description: Open the dev → main release PR. Use whenever the user says "cut a release", "release PR", "ship dev to main", or invokes the `/release` slash command. The protected-branch hook normally blocks any `git`/`gh` command targeting `main` or `dev`; this flow is the single exception, gated by the `CLAUDE_RELEASE=1` marker.
+description: Open the dev → main release PR. The protected-branch hook normally blocks any git/gh command targeting main or dev; this flow is the single exception, gated by the CLAUDE_RELEASE=1 marker. Triggers when the user says "cut a release", invokes /release, or asks to ship dev to main. Trigger phrases — "cut a release", "release PR", "ship to main", "ship dev to main", "dev to main", "/release", "merge to main", "promote to main", "release branch".
 ---
 
 # Create a release PR

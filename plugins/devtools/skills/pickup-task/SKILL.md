@@ -1,6 +1,6 @@
 ---
 name: pickup-task
-description: Pick up the next available Agent task from Asana — filters Backlog, Type=Agent, assigned to me, then claims atomically (UUID + section move + verify) before starting work. Use when the user says "pick up a task", "/pickup-task", or any flow that starts work without a specific task URL.
+description: Pick up the next available Agent task from Asana — filters Backlog, Type=Agent, assigned to me, then claims atomically (UUID + section move + verify) before starting work. Triggers when the user says "pick up a task", invokes /pickup-task, or asks to start work without a specific task URL. Trigger phrases — "pick up a task", "pick up the next task", "pickup task", "/pickup-task", "next task", "claim a task", "grab a task", "what should I work on", "any work to do".
 ---
 
 This skill builds on `asana-api` (auth, base URL, endpoint reference). Read that skill first if you don't already know how to call Asana REST.
@@ -57,6 +57,12 @@ We persist every UUID we generate to `~/.cache/claude-pickup/<task_gid>` (per-ma
 
 ### Before claiming, check for prior claims
 
+The block below answers "should I claim this task or skip it?" by inspecting the most recent `agent-claim:` story. Read its `echo` output as your decision signal:
+
+- "Retry detected: …" — re-read comments since the prior claim for new context, then run the **claim + move** block to stamp a fresh UUID.
+- "already claimed by another agent" — drop this candidate and try the next one from Step 1.
+- No output from the `if` block — no prior claim exists; run the **claim + move** block.
+
 ```bash
 TASK_GID=<chosen task gid>
 CACHE_DIR="$HOME/.cache/claude-pickup"
@@ -69,7 +75,6 @@ LAST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
   | jq -r '.data | map(select(.text | startswith("agent-claim:"))) | sort_by(.created_at) | last | .text // empty')
 
 if [ -n "$LAST_CLAIM" ]; then
-  # Task has been claimed before. Was it us?
   PRIOR_UUID="${LAST_CLAIM#agent-claim:}"
   if [ -f "$PRIOR_CLAIM_FILE" ] && [ "$(cat "$PRIOR_CLAIM_FILE")" = "$PRIOR_UUID" ]; then
     echo "Retry detected: this machine previously claimed $TASK_GID."
@@ -77,13 +82,15 @@ if [ -n "$LAST_CLAIM" ]; then
     # with new context. Read the comments since the last claim story for
     # the new info, then re-claim with a fresh UUID below.
   else
-    echo "Task $TASK_GID is already claimed by another agent ($PRIOR_UUID). Skipping."
-    # Pick another candidate from Step 1.
-    exit 0
+    echo "Task $TASK_GID is already claimed by another agent ($PRIOR_UUID)."
   fi
 fi
+```
 
-# Fresh claim (or retry): generate a new UUID and persist it before stamping.
+### Claim + move
+
+```bash
+# Generate a new UUID and persist it before stamping.
 AGENT_ID=$(uuidgen)
 echo "$AGENT_ID" > "$PRIOR_CLAIM_FILE"
 
@@ -123,23 +130,22 @@ LATEST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
 
 if [ "$LATEST_CLAIM" != "agent-claim:$AGENT_ID" ]; then
   echo "Lost claim race for $TASK_GID — backing off."
-  # Do NOT roll back the section move; the winning agent now owns the task.
-  # Drop this task and pick another from step 1 (or stop if none remain).
-  exit 1
 fi
 ```
 
-If the verify passes, this task is yours. Proceed to Step 4.
+If the echo prints "Lost claim race", another agent grabbed the task between our claim and our verify. Do **not** roll back the section move (the winning agent now owns the task); drop this candidate and pick another from Step 1, or stop if none remain.
+
+If the verify passes (no "Lost claim race" output), this task is yours. Proceed to Step 4.
 
 ## Step 4 — start work
 
-1. Create a feature branch off `dev` named `issue-$TASK_GID` — the literal `issue-` prefix followed by the Asana task gid you claimed:
+1. Create a feature branch off `dev` named `issue-$TASK_GID` — the literal `issue-` prefix followed by the Asana task gid you claimed. Every agent picking up the same task derives the same branch name, which is what lets parallel pickups across machines coordinate (and what lets a human glance at a branch and find the task):
    ```bash
    git checkout dev && git pull
    git checkout -b "issue-$TASK_GID"
    ```
 2. Run the `implement-task` skill to drive the work end-to-end. It owns reading the task body, BUG MODE (`/investigate`), PLAN REVIEW (`/autoplan`), the exploration test-scan, RGR execution, and the full gate suite (typecheck / test / e2e / fallow + task-specific verification). Pass `TASK_ID=$TASK_GID`.
-3. Open a PR targeting `dev`. The branch hooks will block any attempt to commit/push to `main` or `dev` directly.
+3. Open a PR targeting `dev`. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly.
 
 ## Step 5 — when done
 

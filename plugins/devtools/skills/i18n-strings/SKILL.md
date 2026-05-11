@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap user-facing strings with translations. Triggers whenever you add or edit text that a user will see in apps/app.
+description: Wrap user-facing strings with translations in apps/app. Triggers when adding or editing display text, button labels, headings, error messages, empty states, toasts, or any string a user will see. Trigger phrases — "translate", "translation", "i18n", "useTranslations", "TranslatedText", "dictionary", "en.json", "locale", "label", "error message", "placeholder", "string", "copy".
 ---
 
 ## Rule
@@ -30,10 +30,10 @@ return <TranslatedText id="Save changes" />;
 
 ## Dictionary location
 
-`apps/app/src/lib/i18n/dictionaries/<lang>.json` — one file per language (`en.json`, `es.json`, `pt.json`, `so.json`, …). Keys are the English source strings.
+`apps/app/src/lib/i18n/dictionaries/<lang>.json` — one file per language. Keys are the English source strings. The set of supported locales is whichever `.json` files live in that directory — check the folder, don't hardcode the list here.
 
 ## Adding a new string
 
 1. Use `t("New string")` in code first.
 2. Add `"New string": "New string"` to `en.json`.
-3. Add a translation for **every other locale** in the dictionaries folder — `bn.json`, `es.json`, `fr.json`, `pt.json`, `so.json`. Translate the value into the target language; keep the key identical to the English source. Don't leave a locale missing or stubbed with the English string.
+3. Add a translation for **every other `.json` file** in `apps/app/src/lib/i18n/dictionaries/`. List them with `ls apps/app/src/lib/i18n/dictionaries/` so you don't miss one when the locale set changes. Translate the value into the target language; keep the key identical to the English source. Don't leave a locale missing or stubbed with the English string.

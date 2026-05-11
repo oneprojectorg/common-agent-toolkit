@@ -1,6 +1,6 @@
 ---
 name: access-control
-description: How authorization works via the access-zones library and our wrappers around it. Use whenever adding or modifying a tRPC procedure, server action, service-layer function, or route that requires specific permissions — and whenever gating UI on the client.
+description: Authorization via the access-zones library and our wrappers (assertAccess, checkPermission, AccessBoundary). Triggers when adding or modifying a tRPC procedure, server action, service-layer function, or route that needs permissions — and when gating UI on the client. Trigger phrases — "permission", "permissions", "role", "roles", "admin", "access", "authorize", "authorization", "can the user", "is admin", "profile admin", "assertAccess", "checkPermission", "AccessBoundary", "access-zones", "decisions zone", "profile zone".
 ---
 
 ## The library
@@ -50,7 +50,7 @@ import { assertAccess, permission } from "@op/common/services/access";
 assertAccess({ profile: permission.UPDATE }, orgUser?.roles ?? []);
 ```
 
-Real example: `packages/common/src/services/organization/updateOrganization.ts:42–48`.
+Real example: `packages/common/src/services/organization/updateOrganization.ts`.
 
 ### 4. Check (boolean, no throw)
 
@@ -65,7 +65,7 @@ const isAdmin = checkPermission(
 );
 ```
 
-Real example: `packages/common/src/services/decision/getInstance.ts:44–48`.
+Real example: `packages/common/src/services/decision/getInstance.ts`.
 
 ### 5. Convenience wrappers
 
