@@ -1,6 +1,6 @@
 ---
 name: component-file-structure
-description: React component file organization — type placement, main export location, helper location. Triggers when creating a new .tsx file, splitting a large component, extracting a helper, or moving types. Trigger phrases — "new component", "create a component", "refactor this component", "where to put", "file structure", "component file", "extract helper", "split component".
+description: React component file organization — types at top, main export next, helpers below; Suspense queries over useEffect; no any / as. Use when creating a new .tsx file, splitting a component, extracting a helper, or deciding where types go.
 ---
 
 ## Order inside a file

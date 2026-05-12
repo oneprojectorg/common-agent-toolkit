@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap user-facing strings with translations in apps/app. Triggers when adding or editing display text, button labels, headings, error messages, empty states, toasts, or any string a user will see. Trigger phrases — "translate", "translation", "i18n", "useTranslations", "TranslatedText", "dictionary", "en.json", "locale", "label", "error message", "placeholder", "string", "copy".
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components. Use when adding or editing display text, button labels, headings, error messages, toasts, or any string a user will see.
 ---
 
 ## Rule

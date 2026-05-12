@@ -1,6 +1,6 @@
 ---
 name: test-conventions
-description: Where Vitest lives vs Playwright, naming (.test.ts vs .spec.ts), the E2E env shim (NEXT_PUBLIC_SUPABASE_URL → :56321, separate ports 55xxx/56xxx), pnpm test vs pnpm e2e, and choosing which kind of test to add. Triggers when writing a new test, picking unit vs e2e, debugging a failing test, or deciding where a test file goes. Trigger phrases — "write a test", "add a test", "unit test", "integration test", "e2e", "playwright", "vitest", ".test.ts", ".spec.ts", "tests/e2e", "pnpm test", "pnpm e2e", "pnpm w:e2e", "supabase:setup", "describe", "expect".
+description: Where Vitest (unit, .test.ts) lives vs Playwright (e2e, .spec.ts), pnpm test vs pnpm e2e, the E2E env shim, and choosing which kind of test to add. Use when writing a new test, debugging a failing test, or deciding where a test file goes.
 ---
 
 ## Three test surfaces

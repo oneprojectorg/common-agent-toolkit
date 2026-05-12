@@ -1,6 +1,6 @@
 ---
 name: implement-task
-description: End-to-end implementation flow for a claimed Asana task — BUG MODE (/investigate), PLAN REVIEW (/autoplan), exploration with downstream test scan, RGR execution, and the gate suite (typecheck/test/e2e/fallow + task-specific verification). Triggers after a task is claimed and a feature branch is checked out, or whenever the caller asks to drive an existing task to ready-for-review. Trigger phrases — "implement task", "implement-task", "work the task", "drive the task", "finish the task", "claimed task", "$TASK_ID", "RGR", "red green refactor", "gate suite", "feedback loops".
+description: Drive a claimed Asana task from feature branch to ready-for-review — investigate bugs, plan, RGR loop, then the gate suite (typecheck, test, e2e). Use after a task is claimed and the branch is checked out, or when asked to implement, work, or drive a task.
 ---
 
 Drives a single Asana task from claimed → ready-for-review.

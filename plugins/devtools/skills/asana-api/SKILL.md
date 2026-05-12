@@ -1,6 +1,6 @@
 ---
 name: asana-api
-description: Talk to Asana directly via the REST API — preferred over the Asana MCP because the token and project IDs come from .env.local (deterministic, no per-machine MCP install). Triggers when reading or updating tasks in our task project. Trigger phrases — "asana", "asana task", "task gid", "list tasks", "asana comment", "asana custom field", "asana api", "app.asana.com", "$ASANA_API_KEY", "$ASANA_PROJECT_ID".
+description: Talk to Asana via REST with $ASANA_API_KEY and $ASANA_PROJECT_ID from .env.local — preferred over the Asana MCP. Use when reading or updating tasks in our project, listing tasks, posting comments, or moving sections.
 ---
 
 ## Why REST and not the Asana MCP

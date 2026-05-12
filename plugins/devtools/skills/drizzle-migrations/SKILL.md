@@ -1,6 +1,6 @@
 ---
 name: drizzle-migrations
-description: Drizzle ORM workflow for schema edits and migrations. Triggers when touching services/db, editing a schema file, generating a migration, or anything that changes table shape. Trigger phrases — "drizzle", "migration", "schema", "pnpm w:db generate", "services/db", "migration.sql", "snapshot.json", "alter table", "add column", "drop column", "rename column", "new table", "drop table", "foreign key".
+description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. Use when touching services/db, adding/dropping columns, renaming, or creating a new table.
 ---
 
 ## Where things live

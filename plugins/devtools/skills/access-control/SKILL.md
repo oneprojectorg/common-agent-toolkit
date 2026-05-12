@@ -1,6 +1,6 @@
 ---
 name: access-control
-description: Authorization via the access-zones library and our wrappers (assertAccess, checkPermission, AccessBoundary). Triggers when adding or modifying a tRPC procedure, server action, service-layer function, or route that needs permissions — and when gating UI on the client. Trigger phrases — "permission", "permissions", "role", "roles", "admin", "access", "authorize", "authorization", "can the user", "is admin", "profile admin", "assertAccess", "checkPermission", "AccessBoundary", "access-zones", "decisions zone", "profile zone".
+description: Authorization (permissions, roles, admin checks) via the access-zones library and our wrappers (assertAccess, checkPermission, AccessBoundary) across zones profile, decisions, admin. Use when adding or modifying a tRPC procedure, server action, or route that needs permissions, or gating UI by role.
 ---
 
 ## The library

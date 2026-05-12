@@ -1,6 +1,6 @@
 ---
 name: workspace-shortcuts
-description: pnpm w:* shortcuts for commands inside a specific workspace (apps/app, services/db, services/api, packages/ui, etc.). Required before any pnpm command targeting a workspace — typecheck, test, lint, build, generate, dev. Trigger phrases — "pnpm", "typecheck", "run tests", "lint", "pnpm w:", "in apps/app", "in services/db", "workspace command", "filter". Shortcuts: w:app, w:api, w:db, w:ui, w:emails, w:supabase, w:cache, w:realtime.
+description: pnpm w:<workspace> <command> shortcuts (w:app, w:api, w:db, w:ui, w:emails, w:supabase, w:realtime, w:e2e). Use before any pnpm command targeting a workspace — typecheck, test, lint, build, generate, dev.
 ---
 
 ## Shortcut form

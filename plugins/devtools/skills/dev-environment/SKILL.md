@@ -1,6 +1,6 @@
 ---
 name: dev-environment
-description: Local development environment — Docker stack, port layout (apps/app on 3100, API on 3101/3300, Supabase on 3121/3122/3123, Storybook on 3600, emails on 3883), .env.local vs .env.docker, Supabase Studio + Mailpit, and how to drive the running app via Playwright MCP. Triggers when starting the stack, checking why a service is unreachable, running the app in a browser, picking the right URL/port, or wiring up .env. Trigger phrases — "localhost:3100", "localhost:3101", "localhost:3121", "Supabase Studio", "Mailpit", "docker:dev", "pnpm docker:dev", "PORT_PREFIX", ".env.local", ".env.docker", "Playwright", "open the app", "dev server", "is the server running", "TIPTAP_PRO_TOKEN".
+description: Local dev stack — pnpm docker:dev vs workspace dev servers, port layout (localhost:3100 app, :3101 API, :3121–3123 Supabase, Mailpit, Storybook), and .env.local vs .env.docker. Use when starting the stack, debugging an unreachable service, opening the app in a browser, or picking which port to hit.
 ---
 
 ## Two ways to run the stack

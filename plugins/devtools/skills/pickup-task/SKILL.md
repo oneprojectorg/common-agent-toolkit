@@ -1,6 +1,6 @@
 ---
 name: pickup-task
-description: Pick up the next available Agent task from Asana — filters Backlog, Type=Agent, assigned to me, then claims atomically (UUID + section move + verify) before starting work. Triggers when the user says "pick up a task", invokes /pickup-task, or asks to start work without a specific task URL. Trigger phrases — "pick up a task", "pick up the next task", "pickup task", "/pickup-task", "next task", "claim a task", "grab a task", "what should I work on", "any work to do".
+description: Pick up the next available Agent task from Asana — filter Backlog + Type=Agent + assigned to me, then claim atomically. Use when asked to pick up, claim, or grab a task, when invoking /pickup-task, or when starting work without a specific task URL.
 ---
 
 This skill builds on `asana-api` (auth, base URL, endpoint reference). Read that skill first if you don't already know how to call Asana REST.

@@ -1,6 +1,6 @@
 ---
 name: branch-and-pr
-description: Branching and pull-request workflow. Triggers before any commit or push, and when opening a PR. Trigger phrases — "commit", "push", "open a PR", "pull request", "feature branch", "branch name", "gh pr create", "git push", "rebase onto dev", "merge dev", "force push", "release".
+description: Branching and PR workflow — feature branches off dev with issue-<task_gid> naming, conventional commits, and gh pr create --base dev. Use before any commit or push, when opening a PR, or when asked about branch names, rebasing, or merging dev.
 ---
 
 ## Rules

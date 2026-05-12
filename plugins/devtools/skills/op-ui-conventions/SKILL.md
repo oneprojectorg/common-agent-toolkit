@@ -1,6 +1,6 @@
 ---
 name: op-ui-conventions
-description: Use the @op/ui component library, design tokens, and type scale. Triggers when writing JSX/TSX, adding a Button/Heading/Card/Modal/Input, picking a Tailwind color or font size, importing from @op/ui, or editing packages/ui or apps/app/src. Trigger phrases — "add a button", "use a heading", "what color", "what font size", "tailwind class", "@op/ui", "design token", "primary-teal", "neutral-gray", "text-title", "bg-".
+description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Use when writing JSX/TSX, picking a color or font size, importing from @op/ui, or editing packages/ui.
 ---
 
 ## Components
