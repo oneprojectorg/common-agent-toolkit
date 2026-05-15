@@ -1,0 +1,10 @@
+[
+  {"query": "ok i just claimed asana task 1209876543210 from the backlog and ive checked out the issue-1209876543210 branch off dev. lets drive this through to ready-for-review following our team flow", "should_trigger": true},
+  {"query": "the task is claimed and branch checked out, can you take it from here and follow our usual investigate → plan → RGR → gate suite process to land this fix for the voting eligibility bug", "should_trigger": true},
+  {"query": "i need you to finish this task end-to-end. im on issue-12345, task says add a 'Mark as Resolved' button to the proposal review modal with proper tests and verification. drive it to ready for review", "should_trigger": true},
+  {"query": "ok branch is up, asana task is claimed, the task wants me to add support for proposal attachments. walk me through how our team takes a task from this point to a PR thats ready for review including the gate suite", "should_trigger": true},
+  {"query": "i havent claimed anything yet — can you find the next available agent task in asana and pick it up for me", "should_trigger": false},
+  {"query": "ive finished my changes and want to open a PR for this feature branch. push it up and create the PR for review", "should_trigger": false},
+  {"query": "the typecheck is failing on apps/app, can you investigate why and fix the type errors", "should_trigger": false},
+  {"query": "id like to add a vitest test for the votingEligibility function in packages/common to cover the archived-proposal edge case", "should_trigger": false}
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "query": "im adding a new trpc procedure archiveProposal to services/api/src/routers/proposals — it should only be callable by users with admin permission on the decisions zone. how do we wire authorization on procedures in this codebase",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "access-zones", "AccessBoundary"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "the createProposal mutation is letting any member create a proposal but it should be gated to users who have the SUBMIT_PROPOSALS permission. what's our convention for checking that — assertAccess or something else",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "checkPermission"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "need to hide the 'delete decision' button in the proposal review modal unless the current user is a profile admin. whats the right pattern in our codebase for gating UI by role",
+    "should_satisfy": true,
+    "expected_terms": ["AccessBoundary", "checkPermission", "useOrgAccessUser"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "im writing a server action in apps/app that updates an org-level setting. needs to only run if the caller is an admin on the profile zone. how do i load the user and check their permissions in our setup",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "getOrgAccessUser", "access-zones"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "add a permission check to the createProposal route in services/api",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "checkPermission", "access-zones"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "lock down the archiveDecision mutation so only profile admins can call it",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "access-zones", "profile"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "wire up authz on a new endpoint at services/api/src/routers/decisions so only admins can call it",
+    "should_satisfy": true,
+    "expected_terms": ["assertAccess", "access-zones"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "gate the delete-proposal button in apps/app behind the DELETE_PROPOSALS permission",
+    "should_satisfy": true,
+    "expected_terms": ["AccessBoundary", "checkPermission", "access-zones"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "setting up oauth with google for signup via supabase auth, need to figure out the provider config and redirect URL",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["assertAccess", "AccessBoundary", "access-zones"]
+  },
+  {
+    "query": "the session cookie isnt being set on production, looks like a CORS issue between the api domain and the app domain",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["assertAccess", "AccessBoundary", "access-zones"]
+  },
+  {
+    "query": "add a postgres row-level-security policy on the proposals table so users only see proposals from their own org",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["assertAccess", "AccessBoundary", "access-zones"]
+  },
+  {
+    "query": "need to rate limit the /api/login endpoint to 5 requests per minute per ip to prevent brute force attempts",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["assertAccess", "AccessBoundary", "access-zones"]
+  }
+]

@@ -1,6 +1,6 @@
 ---
 name: access-control
-description: Authorization (permissions, roles, admin checks) via the access-zones library and our wrappers (assertAccess, checkPermission, AccessBoundary) across zones profile, decisions, admin. Use when adding or modifying a tRPC procedure, server action, or route that needs permissions, or gating UI by role.
+description: Authorization, permissions, roles, admin checks, authz, gating, and locking down endpoints — via the access-zones library and our wrappers (assertAccess, checkPermission, AccessBoundary) across zones profile, decisions, admin. Use when adding a permission check, making an endpoint or mutation admin-only, gating a button or UI by role, wiring authz on a tRPC procedure / server action / route, or hiding or showing components by permission.
 ---
 
 ## The library

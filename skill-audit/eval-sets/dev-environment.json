@@ -1,0 +1,50 @@
+[
+  {
+    "query": "im onboarding to this repo as a new dev. walk me through getting the full local stack running — what services live where, what ports, which env files do i need set up, and the command to spin everything up",
+    "should_satisfy": true,
+    "expected_terms": ["docker:dev", "3100", ".env.local"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "the app at localhost:3100 isn't loading and i think one of the supabase services is down. how do i debug which docker container is the issue and what should each one be doing on its port",
+    "should_satisfy": true,
+    "expected_terms": ["3121", "3122", "3123", "docker"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i need to decide whether to run pnpm docker:dev or use the workspace dev servers for this feature im working on. whats the tradeoff and what does the team usually do",
+    "should_satisfy": true,
+    "expected_terms": ["docker:dev", "w:app", "w:api", "workspace"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "trying to figure out our local dev conventions — does the api read from .env.local or .env.docker, and how do i wire up TIPTAP_PRO_TOKEN for the editor in development",
+    "should_satisfy": true,
+    "expected_terms": [".env.local", ".env.docker"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "im setting up our vercel production deployment and need to configure the environment variables in their dashboard for the next.js app",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["docker:dev", ".env.docker"]
+  },
+  {
+    "query": "want to add a new docker compose service for a redis cache to our production infrastructure on AWS ECS",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["docker:dev", ".env.docker", "Mailpit"]
+  },
+  {
+    "query": "the playwright e2e tests are failing because the supabase test stack on 56321 isnt responding, can you debug the test config",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["docker:dev", "3121"]
+  },
+  {
+    "query": "help me write a small node script that pings localhost:3000 every 5 seconds to keep my dev server warm during long debug sessions",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["docker:dev", ".env.docker"]
+  }
+]

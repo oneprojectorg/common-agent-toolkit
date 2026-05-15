@@ -3,3 +3,7 @@ node_modules/
 *.log
 .idea/
 .vscode/
+
+# Skill-audit local artifacts — eval results may contain excerpts from the
+# private codebase under test. Re-run evals locally to regenerate.
+skill-audit/results/
