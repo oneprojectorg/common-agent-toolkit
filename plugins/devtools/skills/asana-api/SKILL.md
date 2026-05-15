@@ -1,6 +1,6 @@
 ---
 name: asana-api
-description: Talk to Asana via REST with $ASANA_API_KEY and $ASANA_PROJECT_ID from .env.local — preferred over the Asana MCP. Use when reading or updating tasks in our project, listing tasks, posting comments, or moving sections.
+description: Read or write Asana tasks programmatically via the Asana REST API using $ASANA_API_KEY and $ASANA_PROJECT_ID from .env.local — our preferred path over the Asana MCP for skill-driven flows. Use when fetching a task's description / custom fields / sections, listing tasks in the project, posting a comment to a task, moving a task between sections, or assigning a task. Not for installing or authenticating the Asana MCP server.
 ---
 
 ## Why REST and not the Asana MCP

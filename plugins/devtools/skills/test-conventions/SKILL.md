@@ -1,6 +1,6 @@
 ---
 name: test-conventions
-description: Where Vitest (unit, .test.ts) lives vs Playwright (e2e, .spec.ts), pnpm test vs pnpm e2e, the E2E env shim, and choosing which kind of test to add. Use when writing a new test, debugging a failing test, or deciding where a test file goes.
+description: Test conventions — Vitest for unit / service-layer tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), plus the E2E env shim. Use when writing a new test, deciding between unit vs e2e for a piece of logic, picking the right file suffix or location, debugging a failing test, or fixing missing env vars in Playwright runs.
 ---
 
 ## Three test surfaces
