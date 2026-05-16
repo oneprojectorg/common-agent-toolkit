@@ -1,0 +1,50 @@
+[
+  {
+    "query": "im creating a new ProposalCard.tsx in apps/app. where should types go, where the main export, where helpers?",
+    "should_satisfy": true,
+    "expected_terms": ["types", "main", "helper", "top"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "in this new component i need to fetch proposal data. should i use useEffect with fetch, or suspense?",
+    "should_satisfy": true,
+    "expected_terms": ["Suspense", "suspense"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i need to cast this value as a string in the new component — any as never, what's the convention",
+    "should_satisfy": true,
+    "expected_terms": ["any", "as"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "splitting a long component file into smaller pieces — should helpers go in their own file or stay inline",
+    "should_satisfy": true,
+    "expected_terms": ["below", "helper"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "how do i set up storybook to lazy-load component stories for performance",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i need to write a python script to scrape product hunt — pick a library",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  },
+  {
+    "query": "what's the best way to deploy a remix app to fly.io",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  },
+  {
+    "query": "configure eslint to warn on unused imports in our typescript code",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  }
+]

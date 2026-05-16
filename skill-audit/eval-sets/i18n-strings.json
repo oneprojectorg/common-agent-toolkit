@@ -1,0 +1,50 @@
+[
+  {
+    "query": "im adding a 'Submit proposal' button to apps/app — the label needs to be translated. how do i do that in a client component",
+    "should_satisfy": true,
+    "expected_terms": ["useTranslations", "next-intl"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "adding a new heading to a server component in apps/app — what's our pattern for translating display text",
+    "should_satisfy": true,
+    "expected_terms": ["TranslatedText", "getTranslations"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i have a toast.success('Saved') call — should this string be wrapped in translations or is that overkill",
+    "should_satisfy": true,
+    "expected_terms": ["useTranslations", "translation", "wrap"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "got an error message 'Failed to load proposals' that shows to users — does this need i18n treatment",
+    "should_satisfy": true,
+    "expected_terms": ["useTranslations", "TranslatedText", "translation"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "im writing a unit test that asserts a function returns 'invalid email' — does that string need translation",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["useTranslations", "TranslatedText"]
+  },
+  {
+    "query": "configuring next-intl for our marketing site — locale routing setup",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["TranslatedText"]
+  },
+  {
+    "query": "add a console.log to debug the proposal payload before it hits the api",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["useTranslations", "TranslatedText"]
+  },
+  {
+    "query": "translate our marketing copy from english to spanish for the launch — pick a translation service",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["useTranslations", "TranslatedText"]
+  }
+]

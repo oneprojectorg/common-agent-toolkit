@@ -1,0 +1,50 @@
+[
+  {
+    "query": "open the dev → main release PR, we want to ship what's in dev",
+    "should_satisfy": true,
+    "expected_terms": ["CLAUDE_RELEASE=1", "--base main", "dev"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "time to cut a release. open the release PR from dev to main with the changelog of PRs since last release",
+    "should_satisfy": true,
+    "expected_terms": ["CLAUDE_RELEASE=1", "--base main"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "ship dev to main",
+    "should_satisfy": true,
+    "expected_terms": ["CLAUDE_RELEASE=1", "--base main"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i need to merge dev into main and the protected branch hook keeps rejecting my gh commands. what's the bypass",
+    "should_satisfy": true,
+    "expected_terms": ["CLAUDE_RELEASE=1", "marker"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "im on a feature branch, ready to open a PR to dev",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["CLAUDE_RELEASE=1", "--base main"]
+  },
+  {
+    "query": "deploy our staging environment to vercel preview",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["CLAUDE_RELEASE=1"]
+  },
+  {
+    "query": "create a github release with the auto-generated changelog from tags",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["CLAUDE_RELEASE=1", "--base main --head dev"]
+  },
+  {
+    "query": "rollback the last production deploy because of a regression",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["CLAUDE_RELEASE=1"]
+  }
+]

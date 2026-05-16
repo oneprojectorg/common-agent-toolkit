@@ -1,0 +1,50 @@
+[
+  {
+    "query": "i just claimed asana task gid 1209876543 and need to start work. what should i name the feature branch and what command",
+    "should_satisfy": true,
+    "expected_terms": ["issue-1209876543", "git checkout -b", "dev"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "im done with my changes, ready to open a pr. what command and base branch",
+    "should_satisfy": true,
+    "expected_terms": ["gh pr create", "--base dev"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "got a merge conflict on my feature branch with dev — how should i resolve, rebase or merge",
+    "should_satisfy": true,
+    "expected_terms": ["rebase", "dev"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "what commit message format should i use for this change",
+    "should_satisfy": true,
+    "expected_terms": ["conventional", "feat", "fix"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "deploy our app to vercel production from this branch",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["issue-", "--base dev"]
+  },
+  {
+    "query": "how do i set up github branch protection rules on the api repo",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["issue-"]
+  },
+  {
+    "query": "the e2e tests are failing in CI on my pr — can you help debug the playwright config",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["issue-"]
+  },
+  {
+    "query": "write a github action that auto-labels PRs based on which files they touch",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["issue-", "gh pr create"]
+  }
+]

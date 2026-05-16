@@ -1,0 +1,50 @@
+[
+  {
+    "query": "i want to list all tasks in our asana backlog section that are typed Agent and unassigned. whats the call?",
+    "should_satisfy": true,
+    "expected_terms": ["ASANA_API_KEY", "ASANA_PROJECT_ID", "app.asana.com/api"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "need to post a comment on asana task 1234567890 saying the PR is ready",
+    "should_satisfy": true,
+    "expected_terms": ["ASANA_API_KEY", "app.asana.com/api", "stories"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "move asana task gid 9876 from backlog into in-review section",
+    "should_satisfy": true,
+    "expected_terms": ["ASANA_API_KEY", "addProject", "section"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "read the description and custom fields off this asana task so i can plan the work",
+    "should_satisfy": true,
+    "expected_terms": ["ASANA_API_KEY", "app.asana.com/api", "opt_fields"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i want to install the asana mcp server so i can chat with my asana workspace from claude",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["ASANA_API_KEY", "app.asana.com/api"]
+  },
+  {
+    "query": "how do i add a custom slack notification when an asana project is updated, using the asana webhook system",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  },
+  {
+    "query": "build me a vue app that pulls jira tickets and shows them on a board",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["ASANA_API_KEY", "app.asana.com/api"]
+  },
+  {
+    "query": "im setting up github actions to run on PR open — looking for boilerplate",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["ASANA_API_KEY", "ASANA_PROJECT_ID"]
+  }
+]

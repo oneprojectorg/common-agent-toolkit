@@ -1,0 +1,50 @@
+[
+  {
+    "query": "find me the next available agent task in asana and claim it for me",
+    "should_satisfy": true,
+    "expected_terms": ["ASANA_API_KEY", "Backlog", "claim"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "pick up a task — i don't have one in mind, just grab something from the backlog",
+    "should_satisfy": true,
+    "expected_terms": ["Backlog", "Agent", "asana"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i'm starting work and don't have a task URL — what's the standard way to grab one",
+    "should_satisfy": true,
+    "expected_terms": ["Backlog", "Agent", "claim"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "claim the next unassigned task and check out a branch for it",
+    "should_satisfy": true,
+    "expected_terms": ["Backlog", "claim", "issue-"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "this task is blocked, i need to push it to in-progress on the kanban",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["Backlog"]
+  },
+  {
+    "query": "im implementing a feature, you can see the asana task at https://app.asana.com/0/123/456",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["Backlog filter"]
+  },
+  {
+    "query": "show me all linear issues assigned to me",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["asana", "Backlog"]
+  },
+  {
+    "query": "review the failing playwright e2e from last night's CI run",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["Backlog", "asana"]
+  }
+]

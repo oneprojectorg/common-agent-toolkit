@@ -1,0 +1,50 @@
+[
+  {
+    "query": "im writing a test for the votingEligibility function in packages/common/src — what runner and where does the file go",
+    "should_satisfy": true,
+    "expected_terms": ["vitest", ".test.ts", "pnpm test"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "want to add an e2e test that walks through proposal submission in apps/app — where do those live and what's the suffix",
+    "should_satisfy": true,
+    "expected_terms": ["Playwright", "playwright", ".spec.ts", "pnpm e2e"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "should this be a unit test or an e2e test — its testing the createProposal service function logic with mocked db",
+    "should_satisfy": true,
+    "expected_terms": ["vitest", ".test.ts"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "the playwright tests are failing because process.env isn't loaded — how does the E2E env shim work",
+    "should_satisfy": true,
+    "expected_terms": ["env shim", "Playwright", "playwright"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "configure jest to use the typescript preset for our marketing site",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["vitest", "pnpm e2e"]
+  },
+  {
+    "query": "the production smoke test is failing on the login endpoint — debug the http 502",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["vitest", ".test.ts", "pnpm e2e"]
+  },
+  {
+    "query": "write a github action that runs lint on every push",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm test", "pnpm e2e"]
+  },
+  {
+    "query": "im manually QAing the proposal-delete flow in staging — what should i verify",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm test", "pnpm e2e"]
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "query": "im adding an archivedAt timestamp column to the proposals table — whats the workflow",
+    "should_satisfy": true,
+    "expected_terms": ["services/db/schema", "pnpm w:db generate", "drizzle"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i renamed the user_role column to membership_role in the schema — how do i generate the migration",
+    "should_satisfy": true,
+    "expected_terms": ["pnpm w:db generate", "drizzle", "schema"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i want to create a new table called proposal_votes — where do schema files live and how do i generate sql",
+    "should_satisfy": true,
+    "expected_terms": ["services/db/schema", "pnpm w:db generate"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "i dropped a column locally and generated a migration. should i run pnpm w:db migrate to apply it",
+    "should_satisfy": true,
+    "expected_terms": ["never", "do not", "don't"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "configure prisma to use connection pooling on supabase",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm w:db generate", "services/db/schema"]
+  },
+  {
+    "query": "write a raw sql query to find duplicate emails in the users table",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm w:db generate"]
+  },
+  {
+    "query": "set up redis caching for the api responses on our most-hit endpoints",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["drizzle", "pnpm w:db generate"]
+  },
+  {
+    "query": "i want to upgrade typescript from 5.3 to 5.5 across all workspaces — any compat concerns",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm w:db generate", "services/db/schema"]
+  }
+]

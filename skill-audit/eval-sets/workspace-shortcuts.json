@@ -1,0 +1,50 @@
+[
+  {
+    "query": "i want to run typecheck on the api workspace — whats the command",
+    "should_satisfy": true,
+    "expected_terms": ["w:api", "pnpm"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "how do i build just the ui package without touching the rest of the monorepo",
+    "should_satisfy": true,
+    "expected_terms": ["w:ui", "pnpm"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "spin up the db workspace, generate a migration, then start the api dev server — sequence of commands",
+    "should_satisfy": true,
+    "expected_terms": ["w:db", "w:api", "pnpm"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "run vitest in watch mode only for the realtime workspace",
+    "should_satisfy": true,
+    "expected_terms": ["w:realtime", "pnpm"],
+    "forbidden_terms": []
+  },
+  {
+    "query": "install a new dependency `zod` at the root of the monorepo for all workspaces to use",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": []
+  },
+  {
+    "query": "configure turbo cache to upload to remote on CI runs",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["w:api", "w:app"]
+  },
+  {
+    "query": "write a python script that pings supabase health every 5s",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm w:"]
+  },
+  {
+    "query": "set up a github action that runs prettier on push to dev",
+    "should_satisfy": false,
+    "expected_terms": [],
+    "forbidden_terms": ["pnpm w:"]
+  }
+]
