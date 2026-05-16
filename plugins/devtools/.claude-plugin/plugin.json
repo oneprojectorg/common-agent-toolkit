@@ -1,7 +1,7 @@
 {
   "name": "devtools",
   "description": "Developer skills, hooks, and conventions for the One Project common monorepo.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": {
     "name": "One Project",
     "url": "https://github.com/oneprojectorg"
