@@ -124,6 +124,25 @@ walk the flow, inspect the data — and confirm the observed
 behavior matches what's expected. If the task has none, or its
 notes say to skip, fall back to the standard gates above.
 
+### Mandatory cleanup + review pass
+
+Once the gate suite is green, run — in this order, every time,
+no exceptions:
+
+1. `/simplify` — strip cruft, dead code, premature abstractions,
+   and over-engineered scaffolding from the diff. Apply the
+   suggested simplifications, then re-run `pnpm typecheck`,
+   `pnpm test`, and `pnpm e2e` to confirm the simplified code
+   still passes.
+2. `/review` — final code review on the diff. Address every
+   finding before signaling completion; if a finding is a
+   deliberate non-change, note the reason in the commit message
+   or task comment.
+
+Skip neither. "The diff is small" / "I already self-reviewed" /
+"there's nothing to simplify" are not valid reasons to skip —
+run both and let them confirm.
+
 ### A failing or unrun gate is a STOP signal
 
 The reviewer re-runs every gate from a clean checkout. Shipping
