@@ -147,7 +147,6 @@ draft plan **before** writing any code.
 
 Skip entirely for:
 - Bug fixes (Step 3 BUG MODE replaces this).
-- Trivial changes (<3 files of obvious mechanical work).
 - Revision-mode runs (the feedback already replaces the plan
   review).
 
@@ -243,7 +242,7 @@ no exceptions:
 
 Skip neither. "The diff is small" / "I already self-reviewed" /
 "there's nothing to simplify" are not valid reasons to skip —
-run both and let them confirm.
+run both and let them confirm. Always call the codex adversarial review to also review our changes.
 
 ### A failing or unrun gate is a STOP signal
 
