@@ -10,14 +10,14 @@ description: Branching and PR workflow — feature branches off dev with issue-<
   1. Anyone (or any agent) opening a branch for the same task derives the same name, so parallel pickups coordinate instead of forking.
   2. Reviewers can map a branch back to its task at a glance without grepping the PR description.
   If there genuinely isn't an Asana task, create one first — that's the entry point for any non-trivial change.
-- Open a pull request targeting `dev`. Releases from `dev` to `main` go through `/release`.
+- Open a pull request targeting `dev`, **always in draft mode** (`gh pr create --draft --base dev`). The author marks it ready for review when they're satisfied; agents never open a PR straight to "ready". Releases from `dev` to `main` go through `/release`.
 
 ## Workflow
 
 1. `git checkout -b "issue-$TASK_GID"` (off `dev`).
 2. Make edits, commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`.
 3. Push the feature branch: `git push -u origin "issue-$TASK_GID"`.
-4. Open the PR with `gh pr create --base dev`.
+4. Open the PR with `gh pr create --draft --base dev`.
 5. Never `git push --force` to a shared branch unless you are rebasing. If you must rewrite history, do it on your own feature branch only.
 
 ## What hooks block

@@ -270,7 +270,37 @@ post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
 
 ### Done
 
-When gates are green and `/simplify` + `/review` are clean: open a PR targeting `dev`. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
+When gates are green and `/simplify` + `/review` are clean: open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
+
+### Request review from the Asana assignee
+
+After the PR is open, request a review from the GitHub user that matches the Asana task's assignee. Only three GitHub reviewers are valid: `scazan`, `valentin0h`, `nourmalaeb`. Map by the assignee's first name (case-insensitive):
+
+| Asana assignee first name | GitHub login |
+| --- | --- |
+| Scott | `scazan` |
+| Valentin | `valentin0h` |
+| Nour | `nourmalaeb` |
+
+If the assignee doesn't map to one of the three (unassigned, someone else, or ambiguous), skip the review request. Don't guess.
+
+```bash
+# Look up the Asana assignee's name.
+ASSIGNEE_NAME=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+  "https://app.asana.com/api/1.0/tasks/$TASK_GID?opt_fields=assignee.name" \
+  | jq -r '.data.assignee.name // empty')
+
+case "$(echo "$ASSIGNEE_NAME" | tr '[:upper:]' '[:lower:]')" in
+  scott*)     GH_REVIEWER="scazan" ;;
+  valentin*)  GH_REVIEWER="valentin0h" ;;
+  nour*)      GH_REVIEWER="nourmalaeb" ;;
+  *)          GH_REVIEWER="" ;;
+esac
+
+if [ -n "$GH_REVIEWER" ]; then
+  gh pr edit --add-reviewer "$GH_REVIEWER"
+fi
+```
 
 Then post the PR link to the task and move it to In-Review:
 
