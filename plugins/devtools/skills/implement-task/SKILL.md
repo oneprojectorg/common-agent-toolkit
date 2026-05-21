@@ -16,6 +16,14 @@ Drives a single Asana task from picked → ready-for-review. This skill owns **a
 
 If any are unset, stop and ask the user to fill `.env.local`. Do not invent gids.
 
+## Hard rules (read first)
+
+These apply to every run of this skill. No exceptions, no "the diff is tiny" carve-outs:
+
+1. **ALWAYS run `pnpm format` before every commit.** Every commit, including the plan commit, the first RGR commit, and any fixup commits. Details in Step 7.
+2. **Every PR opens in draft mode** (`gh pr create --draft --base dev`). Agents never open straight to "ready for review" — the author marks it ready when they're satisfied. Details in Step 8.
+3. **Every PR has an assignee set** — the GitHub user mapped from the Asana task's assignee (`scazan` / `valentin0h` / `nourmalaeb`). If the assignee doesn't map, skip the assignment rather than guessing. Details in Step 8.
+
 ## Step 1 — Claim and branch
 
 Claim the task atomically, move it to In-Progress, then create the feature branch. The claim is a UUID we both write into the task (as a story) and persist locally so we can recognize the task on a later retry.
@@ -194,13 +202,17 @@ synthetic tests. For docs- or config-only changes, skip RGR.
 
 ## Step 7 — FEEDBACK LOOPS
 
-Before each commit (format only the files you changed — `pnpm format`
-without `:changes` is denied in `.claude/settings.json` because it
-rewrites the whole tree):
+### ALWAYS format before every commit
+
+Before **every** `git commit` — the plan commit, every RGR commit,
+every fixup commit — run:
 
 ```bash
-pnpm format:changes
+pnpm format
 ```
+
+No exceptions. "It's a one-line change", "it's only markdown",
+"only the plan file changed" — still run it.
 
 Before signaling complete (run all of them; do NOT cherry-pick):
 
@@ -272,9 +284,9 @@ post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
 
 When gates are green and `/simplify` + `/review` are clean: open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
 
-### Request review from the Asana assignee
+### Assign the PR to the Asana assignee
 
-After the PR is open, request a review from the GitHub user that matches the Asana task's assignee. Only three GitHub reviewers are valid: `scazan`, `valentin0h`, `nourmalaeb`. Map by the assignee's first name (case-insensitive):
+After the PR is open, set the PR's assignee to the GitHub user that matches the Asana task's assignee. Only three GitHub assignees are valid: `scazan`, `valentin0h`, `nourmalaeb`. Map by the Asana assignee's first name (case-insensitive):
 
 | Asana assignee first name | GitHub login |
 | --- | --- |
@@ -282,7 +294,7 @@ After the PR is open, request a review from the GitHub user that matches the Asa
 | Valentin | `valentin0h` |
 | Nour | `nourmalaeb` |
 
-If the assignee doesn't map to one of the three (unassigned, someone else, or ambiguous), skip the review request. Don't guess.
+If the Asana assignee doesn't map to one of the three (unassigned, someone else, or ambiguous), skip the assignment. Don't guess.
 
 ```bash
 # Look up the Asana assignee's name.
@@ -291,14 +303,14 @@ ASSIGNEE_NAME=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" 
   | jq -r '.data.assignee.name // empty')
 
 case "$(echo "$ASSIGNEE_NAME" | tr '[:upper:]' '[:lower:]')" in
-  scott*)     GH_REVIEWER="scazan" ;;
-  valentin*)  GH_REVIEWER="valentin0h" ;;
-  nour*)      GH_REVIEWER="nourmalaeb" ;;
-  *)          GH_REVIEWER="" ;;
+  scott*)     GH_ASSIGNEE="scazan" ;;
+  valentin*)  GH_ASSIGNEE="valentin0h" ;;
+  nour*)      GH_ASSIGNEE="nourmalaeb" ;;
+  *)          GH_ASSIGNEE="" ;;
 esac
 
-if [ -n "$GH_REVIEWER" ]; then
-  gh pr edit --add-reviewer "$GH_REVIEWER"
+if [ -n "$GH_ASSIGNEE" ]; then
+  gh pr edit --add-assignee "$GH_ASSIGNEE"
 fi
 ```
 

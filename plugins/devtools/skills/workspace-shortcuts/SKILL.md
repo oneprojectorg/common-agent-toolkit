@@ -32,4 +32,4 @@ description: pnpm w:<workspace> <command> shortcuts (w:app, w:api, w:db, w:ui, w
 ## Don't
 
 - Don't `cd` into a workspace and run pnpm there — use the shortcut, it's faster and consistent across runs.
-- Don't run `pnpm build`, `pnpm format`, or `pnpm w:db migrate` — all denied in `.claude/settings.json`.
+- Don't run `pnpm build` or `pnpm w:db migrate` — both denied in `.claude/settings.json`.
