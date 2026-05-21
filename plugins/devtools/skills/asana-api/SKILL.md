@@ -1,17 +1,17 @@
 ---
 name: asana-api
-description: Read or write Asana tasks programmatically via the Asana REST API using $ASANA_API_KEY and $ASANA_PROJECT_ID from .env.local — our preferred path over the Asana MCP for skill-driven flows. Use when fetching a task's description / custom fields / sections, listing tasks in the project, posting a comment to a task, moving a task between sections, or assigning a task. Not for installing or authenticating the Asana MCP server.
+description: Read or write Asana tasks programmatically via the Asana REST API using $ASANA_PERSONAL_ACCESS_TOKEN and $ASANA_PROJECT_ID from .env.local — our preferred path over the Asana MCP for skill-driven flows. Use when fetching a task's description / custom fields / sections, listing tasks in the project, posting a comment to a task, moving a task between sections, or assigning a task. Not for installing or authenticating the Asana MCP server.
 ---
 
 ## Why REST and not the Asana MCP
 
-The team flow expects the token (`$ASANA_API_KEY`) and project ID (`$ASANA_PROJECT_ID`) to come from `.env.local`. That keeps which account, which project, and which sections we hit deterministic across machines — and means no extra MCP install / auth dance to onboard a new agent or developer. The MCP is fine for ad-hoc exploration; for skill-driven flows (pickup, comment, move sections) we stay on REST.
+The team flow expects the token (`$ASANA_PERSONAL_ACCESS_TOKEN`) and project ID (`$ASANA_PROJECT_ID`) to come from `.env.local`. That keeps which account, which project, and which sections we hit deterministic across machines — and means no extra MCP install / auth dance to onboard a new agent or developer. The MCP is fine for ad-hoc exploration; for skill-driven flows (pickup, comment, move sections) we stay on REST.
 
 ## Auth + project
 
-- Token: `$ASANA_API_KEY` (Personal Access Token). Loaded from `.env.local`.
+- Token: `$ASANA_PERSONAL_ACCESS_TOKEN` (Personal Access Token). Loaded from `.env.local`.
 - Project: `$ASANA_PROJECT_ID` (gid of the team's task project). Loaded from `.env.local`.
-- Header: `Authorization: Bearer $ASANA_API_KEY`.
+- Header: `Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN`.
 - Base URL: `https://app.asana.com/api/1.0`.
 - If either env var is empty, ask the user — do not invent a value.
 
@@ -19,7 +19,7 @@ The team flow expects the token (`$ASANA_API_KEY`) and project ID (`$ASANA_PROJE
 
 ```bash
 # All open tasks in the project (most useful entry point for agents picking up work)
-curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/projects/$ASANA_PROJECT_ID/tasks?completed_since=now&opt_fields=name,assignee.name,due_on,notes,memberships.section.name"
 ```
 
@@ -28,14 +28,14 @@ curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
 ## Read a single task
 
 ```bash
-curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/<task_gid>?opt_fields=name,notes,assignee.name,custom_fields,memberships.section.name"
 ```
 
 ## Read task comments / activity
 
 ```bash
-curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/<task_gid>/stories?opt_fields=text,created_by.name,created_at"
 ```
 
@@ -43,7 +43,7 @@ curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
 
 ```bash
 # Mark complete, change assignee, etc.
-curl -s -X PUT -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X PUT -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"data":{"completed":true}}' \
   "https://app.asana.com/api/1.0/tasks/<task_gid>"
@@ -52,7 +52,7 @@ curl -s -X PUT -H "Authorization: Bearer $ASANA_API_KEY" \
 ## Add a comment
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"data":{"text":"Picked up by agent — branch: feat/<slug>"}}' \
   "https://app.asana.com/api/1.0/tasks/<task_gid>/stories"
@@ -61,7 +61,7 @@ curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
 ## Create a task in our project
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"data\":{\"name\":\"<title>\",\"notes\":\"<body>\",\"projects\":[\"$ASANA_PROJECT_ID\"]}}" \
   "https://app.asana.com/api/1.0/tasks"

@@ -9,7 +9,7 @@ Scope is intentionally narrow: **find a task and return its gid**. Atomic claim,
 
 ## Required env
 
-- `ASANA_API_KEY`
+- `ASANA_PERSONAL_ACCESS_TOKEN`
 - `ASANA_PROJECT_ID`
 - `ASANA_BACKLOG_SECTION_ID` — section we pull from
 
@@ -31,7 +31,7 @@ Assignee is **not** part of the filter — any task in Backlog with `Type=Agent`
 
 ```bash
 # Pipe directly to jq — no intermediate file, no stale-data class of bug.
-ELIGIBLE_JSON=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+ELIGIBLE_JSON=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/sections/$ASANA_BACKLOG_SECTION_ID/tasks?completed_since=now&limit=100&opt_fields=gid,name,notes,assignee.gid,assignee.name,custom_fields.name,custom_fields.multi_enum_values.name,custom_fields.enum_value.name" \
   | jq '[.data[]
       | select(any(.custom_fields[]?;
@@ -48,7 +48,7 @@ Filter the result locally — keep tasks where some `custom_fields[].name === "T
 If you need verification context (e.g. to decide between candidates), pull the stories for a candidate:
 
 ```bash
-curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/<task_gid>/stories?opt_fields=text,created_by.name,created_at"
 ```
 
@@ -58,7 +58,7 @@ Choose one eligible task. **Before handing off**, re-fetch the task's membership
 
 ```bash
 TASK_GID="<chosen_task_gid>"
-CURRENT_SECTION=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+CURRENT_SECTION=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID?opt_fields=memberships.project.gid,memberships.section.gid" \
   | jq -r --arg proj "$ASANA_PROJECT_ID" \
       '.data.memberships[] | select(.project.gid == $proj) | .section.gid')

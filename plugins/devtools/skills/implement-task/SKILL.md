@@ -9,7 +9,7 @@ Drives a single Asana task from picked → ready-for-review. This skill owns **a
 
 ## Required env
 
-- `ASANA_API_KEY`, `ASANA_PROJECT_ID` — see `asana-api`.
+- `ASANA_PERSONAL_ACCESS_TOKEN`, `ASANA_PROJECT_ID` — see `asana-api`.
 - `ASANA_IN_PROGRESS_SECTION_ID` — section we move to on claim.
 - `ASANA_IN_REVIEW_SECTION_ID` — section we move to when the PR is opened.
 - `ASANA_BLOCKED_SECTION_ID` — section we move to when something goes wrong mid-task.
@@ -39,7 +39,7 @@ mkdir -p "$CACHE_DIR"
 PRIOR_CLAIM_FILE="$CACHE_DIR/$TASK_GID"
 
 # What's the last claim story on the task (if any)?
-LAST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+LAST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_at" \
   | jq -r '.data | map(select(.text | startswith("agent-claim:"))) | sort_by(.created_at) | last | .text // empty')
 
@@ -66,13 +66,13 @@ echo "$AGENT_ID" > "$PRIOR_CLAIM_FILE"
 # Stamp the claim by appending a comment (story). Comments are append-only,
 # so two parallel agents can't overwrite each other's claim — but the LAST
 # claim story wins, which is why the verify below is required.
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"data\":{\"text\":\"agent-claim:$AGENT_ID\"}}" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories"
 
 # Move to In-Progress
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
   "https://app.asana.com/api/1.0/sections/$ASANA_IN_PROGRESS_SECTION_ID/addTask"
@@ -82,7 +82,7 @@ On a retry, the user has likely added a comment with new info. Read all stories 
 
 ```bash
 # Comments since our previous claim
-curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_by.name,created_at" \
   | jq --arg prior "$PRIOR_UUID" \
       '.data | map(select(.text | startswith("agent-claim:") | not)) | .[]'
@@ -93,7 +93,7 @@ curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
 Re-read the most recent claim story on the task. If it isn't ours, another agent grabbed it between our claim and our move.
 
 ```bash
-LATEST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+LATEST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_at" \
   | jq -r '.data | map(select(.text | startswith("agent-claim:"))) | sort_by(.created_at) | last | .text')
 
@@ -286,7 +286,7 @@ If the assignee doesn't map to one of the three (unassigned, someone else, or am
 
 ```bash
 # Look up the Asana assignee's name.
-ASSIGNEE_NAME=$(curl -s -H "Authorization: Bearer $ASANA_API_KEY" \
+ASSIGNEE_NAME=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID?opt_fields=assignee.name" \
   | jq -r '.data.assignee.name // empty')
 
@@ -305,12 +305,12 @@ fi
 Then post the PR link to the task and move it to In-Review:
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"data\":{\"text\":\"PR opened: <pr-url>\"}}" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories"
 
-curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
   "https://app.asana.com/api/1.0/sections/$ASANA_IN_REVIEW_SECTION_ID/addTask"
@@ -325,7 +325,7 @@ If anything goes wrong mid-task (build broken, requirements ambiguous, scope ble
 1. Add a story explaining exactly what blocked — what you tried, what failed, the error or ambiguity, and what info you'd need to retry. Be specific; the human reading it should be able to act without spelunking.
 2. Move the task to `ASANA_BLOCKED_SECTION_ID`:
    ```bash
-   curl -s -X POST -H "Authorization: Bearer $ASANA_API_KEY" \
+   curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
      -H "Content-Type: application/json" \
      -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
      "https://app.asana.com/api/1.0/sections/$ASANA_BLOCKED_SECTION_ID/addTask"

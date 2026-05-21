@@ -2,7 +2,7 @@
   {
     "query": "find me the next available agent task in asana and claim it for me",
     "should_satisfy": true,
-    "expected_terms": ["ASANA_API_KEY", "Backlog", "claim"],
+    "expected_terms": ["ASANA_PERSONAL_ACCESS_TOKEN", "Backlog", "claim"],
     "forbidden_terms": []
   },
   {
