@@ -10,7 +10,7 @@ Every user-facing string goes through translation. Never hardcode display text.
 ## Client components
 
 ```tsx
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/lib/i18n";
 
 const t = useTranslations();
 return <span>{t("Save changes")}</span>;
@@ -20,7 +20,7 @@ return <span>{t("Save changes")}</span>;
 
 ```tsx
 import { TranslatedText } from "@/components/TranslatedText";
-return <TranslatedText id="Save changes" />;
+return <TranslatedText text="Save changes" />;
 ```
 
 ## Interpolation
