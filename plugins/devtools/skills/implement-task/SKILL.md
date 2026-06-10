@@ -114,12 +114,24 @@ If the echo prints "Lost claim race", another agent grabbed the task between our
 
 ### Branch
 
-Create the feature branch off `dev` named `issue-$TASK_GID` — the literal `issue-` prefix followed by the Asana task gid you claimed. Every agent picking up the same task derives the same branch name, which is what lets parallel pickups across machines coordinate (and what lets a human glance at a branch and find the task):
+Create the feature branch off `dev` named `issue-$TASK_GID` — the literal `issue-` prefix followed by the Asana task gid you claimed. Every agent picking up the same task derives the same branch name, which is what lets parallel pickups across machines coordinate (and what lets a human glance at a branch and find the task).
+
+Base the branch **explicitly on `origin/dev`**. Never `git checkout dev` (the protected-branch hook blocks switching HEAD onto dev) and never run a bare `git checkout -b` from the current HEAD — after a previous task, HEAD is still that task's branch, and branching from it silently stacks this task on top of the last one:
 
 ```bash
-git checkout dev && git pull
-git checkout -b "issue-$TASK_GID"
+git fetch origin dev
+git checkout -b "issue-$TASK_GID" origin/dev
 ```
+
+Then verify the new branch sits exactly on the dev tip:
+
+```bash
+if [ "$(git merge-base HEAD origin/dev)" != "$(git rev-parse origin/dev)" ]; then
+  echo "STOP: issue-$TASK_GID is not based on the origin/dev tip."
+fi
+```
+
+If the guard prints STOP, do not work around it and do not proceed to Step 2 — something rebased or blocked the branch creation. Report the state to the caller (or follow Step 8 "On failure") so a human can untangle it.
 
 ## Step 2 — Read the task
 

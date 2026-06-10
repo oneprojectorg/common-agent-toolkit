@@ -50,6 +50,13 @@ DESTRUCTIVE_CHECKOUT='git\s+checkout\s+(--|\.[[:space:]]|\.[[:space:]]*$)'
 # included — the agent shouldn't move onto main/dev.
 SAFE_GIT_VERBS='git\s+(fetch|pull|rebase|merge|diff|log|show|status|rev-parse|ls-remote|remote|blame|describe|shortlog|whatchanged|cat-file|for-each-ref|reflog|range-diff)\b'
 
+# Creating a NEW branch based on a protected ref is read-only on that ref and
+# never moves HEAD onto it. This is how implement-task starts every feature
+# branch (`git checkout -b issue-<gid> origin/dev`). Without this allowance,
+# agents blocked on `git checkout dev` fall back to a bare `git checkout -b`
+# from the current HEAD -- silently stacking each task on the previous branch.
+SAFE_BRANCH_CREATE='git\s+(checkout\s+-b|switch\s+-c)\s+[^[:space:]]+\s+(origin/)?(main|dev)([[:space:]]|$)'
+
 # Destructive ops are never allowed, even under /release.
 if echo "$COMMAND" | grep -qE "$DESTRUCTIVE_RESET|$DESTRUCTIVE_CLEAN|$DESTRUCTIVE_BRANCH_D|$DESTRUCTIVE_CHECKOUT"; then
   echo "BLOCKED: destructive git operation (reset --hard, clean -f, branch -D, checkout --). Ask the user before running this." >&2
@@ -75,6 +82,12 @@ fi
 
 # `gh pr create --base dev` is the normal feature → dev PR. Always allowed.
 if echo "$COMMAND" | grep -qE "$GH_PR_CREATE_BASE_DEV"; then
+  exit 0
+fi
+
+# Creating a new branch FROM main/dev. Destructive ops and remote writes were
+# already filtered out above, so matching here is safe.
+if echo "$COMMAND" | grep -qE "$SAFE_BRANCH_CREATE"; then
   exit 0
 fi
 
