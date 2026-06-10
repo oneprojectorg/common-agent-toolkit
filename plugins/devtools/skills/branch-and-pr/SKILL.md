@@ -14,7 +14,7 @@ description: Branching and PR workflow — feature branches off dev with issue-<
 
 ## Workflow
 
-1. `git checkout -b "issue-$TASK_GID"` (off `dev`).
+1. `git fetch origin dev && git checkout -b "issue-$TASK_GID" origin/dev` — always base the branch explicitly on `origin/dev`. A bare `git checkout -b` branches from the current HEAD (stacking the new task on whatever was checked out last), and `git checkout dev` itself is hook-blocked.
 2. Make edits. **Before every `git commit`, run `pnpm format`** — no exceptions, including plan commits and one-line fixes. Then commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`.
 3. Push the feature branch: `git push -u origin "issue-$TASK_GID"`.
 4. Open the PR with `gh pr create --draft --base dev`. If the task has an Asana assignee that maps to a valid GitHub user (`scazan` / `valentin0h` / `nourmalaeb`), set it as the PR assignee with `gh pr edit --add-assignee <login>` — see `implement-task` Step 8 for the mapping.
@@ -31,6 +31,7 @@ The pre-tool hooks in `.claude/hooks/` will refuse:
 - Commits while currently on `main` or `dev` (separate hook).
 
 What's **allowed** without any marker:
+- Creating a new branch from a protected ref: `git checkout -b <branch> origin/dev` / `git switch -c <branch> origin/dev`.
 - Read-only and local-sync git verbs against protected refs: `git fetch origin dev`, `git rebase origin/dev`, `git merge origin/dev`, `git pull origin dev`, `git diff origin/main..HEAD`, `git log main..feature`, `git show origin/dev:path`. The standard "keep my feature branch in sync with dev" flow just works.
 - `git push --force` / `--force-with-lease` to **feature** branches — needed after a rebase.
 - `gh pr create --base dev` — the normal feature → dev PR.
