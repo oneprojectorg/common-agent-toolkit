@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 13 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
+One install gives engineers the full agent harness for this codebase: 18 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
 ## Install
 
@@ -37,18 +37,23 @@ Then commit the resulting diff.
 
 | Skill | What it covers |
 |---|---|
-| `access-control` | Authorization via the `access-zones` library and our wrappers (`assertAccess`, `checkPermission`, `<AccessBoundary>`). |
+| `access-control` | Authorization via the `access-zones` library and our wrappers (`assertProfileAccess`, `assertOrgAccess`, `assertProfileAdmin`, `<AccessBoundary>`, `AccessTierError`). |
+| `api-endpoints` | Adding / editing tRPC endpoints — the 4-tier procedure model (`networkAuthenticated` / `authenticatedConfirmed` / `authenticated` / `open`), encoder pattern, schemas in `@op/common`, realtime channels. |
 | `asana-api` | Talking to Asana directly via the REST API. |
 | `branch-and-pr` | Branching and pull-request workflow. |
-| `component-file-structure` | Conventions for organizing a React component file. |
+| `code-conventions` | Cross-cutting review patterns — composition over duplication, naming (no acronyms, `get`/`assert` prefixes), scope discipline (one task per PR), type escape-hatch avoidance, casts at the DB boundary, Common error types. |
+| `component-file-structure` | Conventions for organizing a React component file — Suspense suffix, no `Record<string, unknown>`, composition over duplication, optional vs undefined. |
 | `dev-environment` | Local dev stack — docker layout, port map, `.env.local` vs `.env.docker`, Supabase Studio + Mailpit, driving the running app from Playwright. |
-| `drizzle-migrations` | Drizzle ORM workflow for schema edits and migrations. |
-| `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`. |
+| `drizzle-migrations` | Drizzle ORM workflow for schema edits + the relational-query (`db.query.X`) preference for reads. |
+| `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`, plus `getTranslations` for metadata and the i18n `useRouter`. |
 | `implement-task` | End-to-end implementation flow for a claimed Asana task. |
-| `op-ui-conventions` | Using `@op/ui`, design tokens, and the type scale. |
+| `op-ui-conventions` | Using `@op/ui` + `@op/sense`, design tokens, and the type scale. |
 | `pickup-task` | Pick up the next available Agent task from Asana and claim it atomically. |
+| `pr-description` | Conventions for PR bodies — concise (usually one paragraph), lead with *what* and *why*, no test-plan checklist, no diff walk-through; mermaid ERDs for schema PRs and stacked-PR references when they earn the space. |
+| `realtime-channels` | Naming + design of `Channels.X` builders — `scope[:id]` convention, JSDoc subscriber/broadcaster pairing, when to add a channel vs reuse one, and the `channelScope.ts` helper pattern for fanning invalidations across multi-tenant resources. |
 | `release` | Open the dev → main release PR (invokable as `/release`). |
-| `test-conventions` | Vitest vs Playwright layout, `.test.ts` vs `.spec.ts`, the E2E env shim, and choosing which kind of test to add. |
+| `service-layer-structure` | How to organize `packages/common/src/services/<feature>/` — one file per operation, named-params signatures, auth-assert first, transactions with sorted-id locks, and the `<feature>Auth.ts` / `channelScope.ts` / `schemas.ts` / `constants.ts` / `utils.ts` auxiliary-file conventions. |
+| `test-conventions` | Vitest vs Playwright layout, `.test.ts` vs `.spec.ts`, the E2E env shim, `describeAccessTierGating`, and choosing which kind of test to add. |
 | `vercel-react-best-practices` | Vendored from [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — React/Next.js performance rules. MIT-licensed; refreshed via `scripts/sync-vercel.sh`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
 

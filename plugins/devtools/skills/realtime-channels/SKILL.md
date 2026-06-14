@@ -1,0 +1,161 @@
+---
+name: realtime-channels
+description: Channel naming and design — the Channels.X builders in packages/common/src/realtime/channels/channels.ts (scope[:id] convention), JSDoc subscriber/broadcaster pairing, exporting a per-builder type plus the ChannelName union, when to add a channel vs reuse one, when NOT to over-channel a mutation, and the channelScope.ts helper pattern for fanning out invalidations to many subscribers. Use when adding a new channel, naming a channel, deciding whether a mutation should register an existing channel or a new one, or wiring per-profile / per-collection invalidation fan-out for a multi-tenant feature.
+---
+
+Realtime invalidation in `oneprojectorg/common` is **push-based via channels**. A tRPC query declares which channels its result depends on; a mutation declares which channels it affects; the client (`QueryInvalidationSubscriber`) subscribes to channels and invalidates the matching query keys when a mutation fires. The wiring lives on the procedures (see the `api-endpoints` skill), but the channel design lives here.
+
+## Single source of truth: `Channels.X(...)`
+
+All channel names are built by one of the `Channels.X(...)` functions in `packages/common/src/realtime/channels/channels.ts`. Never inline a channel string.
+
+```ts
+// ✅
+ctx.registerQueryChannels([Channels.profilePosts(profileId)]);
+
+// ❌
+ctx.registerQueryChannels([`profilePosts:${profileId}`]);
+```
+
+The builders return a TypeScript `as const` literal, which the per-builder type captures via `ReturnType<typeof Channels.foo>`. That gives us:
+
+- Compile-time enforcement of the channel format.
+- A `ChannelName` union of every valid channel — `ChannelName[]` is the only valid parameter for `registerQueryChannels` / `registerMutationChannels`.
+- A single grep target for "where is this channel registered."
+
+## Naming convention: `scope[:id][:subscope]`
+
+Every channel name follows `scope[:id]` (colon-separated). The first segment is the resource class; later segments narrow:
+
+| Convention | Example | When |
+|---|---|---|
+| `<resource>:<id>` | `decisionInstance:abc` | Single resource by id |
+| `<resource>s:<parentId>` | `profilePosts:xyz`, `decisionProposals:abc` | Collection of a resource scoped to a parent |
+| `<resource>:<id>:<subscope>` | `postComments:abc` (already scoped by post) | When the subscope is intrinsic, drop the redundant id pair |
+| `<resource>:<type>:<id>` | `profileJoinRequest:source:abc` | When direction matters (source vs target, in vs out) |
+| `global` | `global` | Truly global — broadcast to every subscriber |
+
+Pluralization carries meaning:
+- `profilePosts:<profileId>` is the *list* of posts on a profile.
+- `decisionProposal:<instanceId>:<proposalId>` is a *single* proposal.
+- `decisionProposals:<instanceId>` is the *list* of proposals on an instance.
+
+Use the singular for "this one record changed"; the plural for "the list of these records may have changed."
+
+## Per-builder JSDoc — subscriber + broadcaster
+
+Every non-trivial channel builder carries a JSDoc that names:
+
+1. **Subscribers** — which queries read this channel.
+2. **Broadcasters** — which mutations affect this channel.
+
+```ts
+/**
+ * Channel for top-level posts on a profile (user, org, or decision).
+ * Subscribed to by post-feed queries, broadcast to by post creation and
+ * reactions on those posts.
+ */
+profilePosts: (profileId: string) => `profilePosts:${profileId}` as const,
+```
+
+This makes it possible to audit a channel without grepping the whole codebase. When you add a channel, write the JSDoc. When you start using an existing channel from a new query or mutation, **update the JSDoc** to list the new caller — that's how the pairing stays honest.
+
+## Per-builder type + ChannelName union
+
+For every `Channels.foo` builder, export a `FooChannel` type and add it to the `ChannelName` union at the bottom of `channels.ts`. The two-step keeps the union exhaustive:
+
+```ts
+export type ProfilePostsChannel = ReturnType<typeof Channels.profilePosts>;
+
+export type ChannelName =
+  | ProfilePostsChannel
+  | ProfileResourcesChannel
+  | ...
+```
+
+If you skip the union entry, the builder still works, but `ChannelName` no longer covers it — type errors propagate to callers in confusing ways.
+
+## When to add a new channel
+
+Add a new channel only when:
+
+1. **A new query reads data not covered by any existing channel.** Then the channel is the channel that query depends on, and any mutation that touches the same data must register it.
+2. **Existing channels are too coarse and you'd be invalidating unrelated queries.** E.g. if `profilePosts:<id>` covers every post on a profile, and you now have a feature that watches only one post's comment count, `postComments:<postId>` is the more specific channel.
+
+Don't add a channel that no query subscribes to. **The mutation side exists for the query side.** Adding a channel "just in case" leaves the codebase carrying noise that pretends to be load-bearing.
+
+## When NOT to over-channel a mutation
+
+A recurring review pattern (PR #1229): mutations that register every plausibly-affected channel become invalidation bombs. Register the channels the affected queries **actually** subscribe to, not every channel related to the resource.
+
+```ts
+// 🚫 Over-channeled — `Channels.collectionResources(id)` invalidates a list that
+// nobody is going to see after delete; the parent fan-out is what's needed.
+ctx.registerMutationChannels([
+  Channels.collectionResources(collectionId),  // is this query still mounted?
+  Channels.profileCollections(profileId),
+]);
+
+// ✅ Just the parent fan-out — the collection itself is gone.
+ctx.registerMutationChannels([
+  Channels.profileCollections(profileId),
+]);
+```
+
+Reviewer (PR #1229): "Looks a bit excessive and I'm wondering if we need it. For example, if a collection is deleted I wouldn't care much about `Channels.collectionResources(collectionId)` or do we have a good case for that?"
+
+The check: does an active query subscribe to this channel, and does this mutation actually change the data that query returns? If either answer is no, drop the channel.
+
+## Fanning invalidation to many subscribers (`channelScope.ts`)
+
+When a single mutation can affect many parent scopes (a resource shared across multiple profiles' collections), centralize the lookup in a `channelScope.ts` (or similar) helper inside the feature service. The router then maps the resolved ids to channels:
+
+```ts
+// packages/common/src/services/resources/channelScope.ts
+export const getScopesForResource = async (
+  resourceId: string,
+): Promise<{ profileIds: string[]; collectionIds: string[] }> => {
+  // ... query that returns every (profileId, collectionId) the resource lives in
+};
+```
+
+```ts
+// services/api/src/routers/resources/delete.ts
+const { profileIds, collectionIds } = await getScopesForResource(id);
+await deleteResource({ authUserId: ctx.user.id, id });
+
+ctx.registerMutationChannels([
+  ...profileIds.map((p) => Channels.profileResources(p)),
+  ...collectionIds.map((c) => Channels.collectionResources(c)),
+]);
+```
+
+Two things to notice:
+
+- **Snapshot the scope before the mutation.** Once the resource is deleted, the join rows are gone — `getScopesForResource` won't find anything. Resolve the fan-out targets *first*, mutate *second*.
+- **Helpers live in the service, not the router.** The router is thin — it asks the service "what's the scope?" and "do the work" and combines the two.
+
+## Channel registration on procedures
+
+This belongs in `api-endpoints`, but for symmetry:
+
+- **Query**: `ctx.registerQueryChannels([Channels.profilePosts(input.profileId)])` — declares which channels this result depends on.
+- **Mutation**: `ctx.registerMutationChannels([Channels.profilePosts(input.profileId)])` — declares which channels this mutation affects.
+- The pair must match exactly (same `Channels.X(...)` call) for the client to invalidate.
+
+If a query and a mutation should share a channel but use different identifiers (the query takes a slug, the mutation knows the id), normalize at the service layer — the mutation should fetch the id-equivalent the query depends on before registering. Don't paper over the mismatch by registering two channels.
+
+## Test channels at the service-layer boundary
+
+Channel registration is wiring, not behavior — there's no Vitest assertion that "this channel was registered." The check that matters is **manual + an integration test that the resulting query refreshes**. Most regressions show up as "the UI didn't update after I clicked save," not as test failures.
+
+If you find a feature where mutations and queries are racing, the answer is almost never a manual `invalidate` — it's missing or mismatched channels. See the `api-endpoints` and `component-file-structure` skills for the rule: never manually invalidate.
+
+## Don't
+
+- **Don't inline channel strings.** Always go through `Channels.X(...)`.
+- **Don't add a channel without subscribers.** Useless invalidation surface.
+- **Don't register every channel a mutation could plausibly touch.** Register what active queries depend on.
+- **Don't skip the JSDoc** on a new channel — the subscriber/broadcaster pairing is the contract.
+- **Don't resolve fan-out targets after the mutation.** Snapshot first; the join rows you need may be gone by the time the mutation finishes.
+- **Don't use the `global` channel** for normal-flow invalidation. It's a system-wide hammer; use a scoped channel.
