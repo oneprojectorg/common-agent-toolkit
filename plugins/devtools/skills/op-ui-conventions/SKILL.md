@@ -1,21 +1,13 @@
 ---
 name: op-ui-conventions
-description: Use the @op/ui component library and @op/sense shadcn-based primitives, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Use when writing JSX/TSX, picking a color or font size, importing from @op/ui or @op/sense, choosing a variant vs creating a one-off, or editing packages/ui.
+description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Use when writing JSX/TSX, picking a color or font size, importing from @op/ui, choosing a variant vs creating a one-off, or editing packages/ui.
 ---
 
-## Component libraries — `@op/ui` and `@op/sense`
+## Components
 
-The codebase has two component packages, used in tandem:
-
-- **`@op/ui`** — the existing in-house library. Higher-level / app-shaped components. Default to this for layout primitives and anything that already exists here.
-- **`@op/sense`** (scaffolded in PR #1223) — a newer shadcn-based primitives package. Use it for unstyled / accessible primitives (Sidebar, view-toggle, dropdown menus, etc.) that don't have an `@op/ui` equivalent. Examples in use: `apps/app/src/components/decisions/DecisionViewToggle.tsx`.
-
-Rules of thumb:
-
-- Prefer `@op/ui` if a component for your use case exists there — `<Button>` not `<button>`, `<Heading>` not `<h2>`.
-- Reach for `@op/sense` for shadcn-style primitives (Sidebar, etc.) when the `@op/ui` variant doesn't exist or has a known accessibility gap.
-- Import per-component: `import { Button } from "@op/ui/Button"`. The libraries are exported via the `package.json` `exports` field.
-- Source: `packages/ui/src/` (for `@op/ui`) and `packages/sense/src/` (for `@op/sense`). Storybook stories sit alongside each component.
+- Prefer `@op/ui` over native HTML — `<Button>` not `<button>`, `<Heading>` not `<h2>`.
+- Import per-component: `import { Button } from "@op/ui/Button"`. The library is exported via the `package.json` `exports` field.
+- Source: `packages/ui/src/`. Storybook stories sit alongside each component.
 
 ## Don't roll one-off components when a variant could exist
 
@@ -24,7 +16,7 @@ When you find yourself overriding `@op/ui` styles to fight a layout (`color="sec
 - **Use the existing variant once, leave a comment** ("only use site for now"). PR #1077 review: "happy to extract a `row` / `card` variant once the pattern shows up a second time."
 - **Add a variant to `@op/ui`** the second time you need it. The threshold to extract is when you'd otherwise be duplicating the override.
 
-Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@op/ui` and `@op/sense` already provide — reviewers will ask why.
+Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@op/ui` already provides — reviewers will ask why.
 
 ## Colors
 
@@ -46,7 +38,7 @@ Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@o
 
 ## When in doubt
 
-Read `packages/ui/src/<component>` or `packages/sense/src/<component>` to confirm the API before introducing a new component. The Storybook (`pnpm w:ui dev` at port 3600) is the fastest way to scan available variants.
+Read `packages/ui/src/<component>` to confirm the API before introducing a new component. The Storybook (`pnpm w:ui dev` at port 3600) is the fastest way to scan available variants.
 
 ## React/Next.js performance
 
