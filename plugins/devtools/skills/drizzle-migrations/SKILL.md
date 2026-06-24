@@ -33,7 +33,7 @@ Recurring review patterns from recent schema PRs (#1186, #1228, #1264, #1274):
 - **ON DELETE behavior**: confirm what happens to dependents on parent delete. Orphan rows can pile up silently when no cascade is set. Either set the cascade explicitly or document why orphans are OK ("ok to start like this or add an AFTER DELETE trigger").
 - **Don't add defensive `IF NOT EXISTS` / `WHERE NOT EXISTS` guards to migrations** unless you have a real reason — they read as cargo-culted. PR #1274 review: "yeah, was just meant to ensure the migration won't fail but I'll remove."
 
-## Query conventions — prefer relational (RBQ) over imperative
+## Query conventions — prefer relational (RBQ v2) over imperative
 
 Reach for `db.query.<table>.findFirst / findMany` with `{ where, with, columns, orderBy }` before reaching for `db.select().from().where()`. The relational API is the codebase's direction — PR #1244 migrated access-user lookups to RBQ v2, and reviewers ask for it on new code.
 
@@ -54,14 +54,78 @@ const [tail] = await tx
   .limit(1);
 ```
 
-Imperative `db.select().from()` is fine when you need a SQL feature RBQ doesn't expose (CTEs, custom join conditions on computed expressions, raw subqueries) — but it's the exception, not the default. When you do reach for it, leave a one-line comment explaining why.
+### Filters use the object form, not imported operator functions
 
-The same applies to `db.update()`, `db.insert()`, `db.delete()` — RBQ doesn't replace those, but the **read path** is the one that should default to `db.query`.
+RBQ v2 expresses `eq`, `isNotNull`, `isNull`, `ilike`, `inArray`, and range predicates as object literals inside `where`. Don't import `eq` / `isNotNull` / `isNull` / `ilike` / `inArray` / `gt` / `gte` / `lt` / `lte` from `drizzle-orm` just to use them in a `where`:
+
+```ts
+// Prefer — object-literal filters, explicit columns
+const rows = await db.query.profileUserInvites.findMany({
+  where: {
+    profileId,
+    notifiedAt: { isNotNull: true },
+    acceptedOn: { isNull: true },
+    email: { ilike: pattern },
+    role: { inArray: ['admin', 'owner'] },
+  },
+  columns: { id: true, email: true },
+});
+
+// Over — imported eq / isNotNull / isNull / ilike / inArray
+const rows = await db
+  .select({ id: profileUserInvites.id, email: profileUserInvites.email })
+  .from(profileUserInvites)
+  .where(
+    and(
+      eq(profileUserInvites.profileId, profileId),
+      isNotNull(profileUserInvites.notifiedAt),
+      isNull(profileUserInvites.acceptedOn),
+      ilike(profileUserInvites.email, pattern),
+      inArray(profileUserInvites.role, ['admin', 'owner']),
+    ),
+  );
+```
+
+Spread-conditional clauses keep optional filters readable:
+
+```ts
+where: {
+  profileId,
+  ...(pending === true && { acceptedOn: { isNull: true } }),
+},
+```
+
+Live references: `packages/common/src/services/profile/listUserInvites.ts:25-28` (`isNotNull` + spread-conditional) and `listProfileUserInvites.ts:30` (`isNull`).
+
+### Project only the columns you need
+
+Pass `columns: { foo: true, bar: true }` when only a few fields are wanted — don't pull the whole row and discard most of it:
+
+```ts
+const rows = await db.query.decisionBoundaries.findMany({
+  where: { profileId, taxonomyTermId: { isNotNull: true } },
+  columns: { name: true },
+});
+```
+
+### When to fall back to `db.select`
+
+Imperative `db.select().from()` is fine when RBQ genuinely can't express the query — typically:
+
+- PostGIS / raw `sql` predicates (`ST_Contains`, `ST_Intersects`).
+- Literal projections RBQ doesn't model (`` sql`1` `` for existence probes, `count(*)`, window functions).
+- CTEs, custom join conditions on computed expressions, or raw subqueries.
+
+When you do fall back, **leave a one-line comment explaining *why*** so the next reader doesn't reflexively rewrite it as RBQ. Canonical fallback: `packages/common/src/services/decision/resolveBoundary.ts:27-40` (`ST_Contains` over a geography column — RBQ can't express it cleanly).
+
+### Mutations and transactions are out of scope
+
+`db.insert()` / `db.update()` / `db.delete()` stay imperative — RBQ doesn't replace writes. Transactions wrapping several statements continue to use the same operators on the `tx` handle; the preference here is about the **read** path. RBQ on a `tx` handle (`tx.query.<table>.findFirst(...)`) is fine and matches the example above.
 
 ## Type generation
 
 - Schema types flow through `@op/db` automatically — re-running `generate` and a typecheck (`pnpm w:app typecheck`) is enough to surface mismatches.
-- For a row type, use `typeof <table>.$inferSelect` (or `$inferInsert` for the insert shape). PR #1264 review: "Use `$inferSelect` if needed." Don't handwrite a Zod schema that duplicates the row shape — use `createSelectSchema(<table>)` from drizzle-zod and extend it.
+- For a row type, use `typeof <table>.$inferSelect` (or `$inferInsert` for the insert shape) — not `InferModel<typeof <table>>`. PR #1264 review: "Use `$inferSelect` if needed." Don't handwrite a Zod schema that duplicates the row shape — use `createSelectSchema(<table>)` from drizzle-zod and extend it.
 
 ## Don't
 
