@@ -162,22 +162,34 @@ A query and the mutations that change its data must register the **same** channe
 
 **Don't over-register on mutations either.** Reviewers will push back on excessive channel lists ("a delete doesn't need `Channels.collectionResources(id)` if nothing reads it"). Register the channels the affected queries actually subscribe to, not every channel the mutation could plausibly affect.
 
-## Drizzle queries: prefer relational (RBQ) over imperative
+## Drizzle queries: prefer relational (RBQ v2) over imperative
 
 Reach for `db.query.<table>.findFirst / findMany` with `{ where, with, columns, orderBy }` before reaching for `db.select().from().where()`. The relational API is the codebase's direction (PR #1244 migrated access-user lookups to RBQ v2; reviewers ask for it on new code).
 
 ```ts
-// Prefer
+// Prefer — object-literal filters, explicit columns
 const row = await tx.query.resourceCollectionItems.findFirst({
-  where: { collectionId, resourceId },
+  where: { collectionId, resourceId, deletedAt: { isNull: true } },
+  columns: { id: true, position: true },
 });
 
-// Over
+// Over — imported eq / isNull, select-all
 const [row] = await tx.select().from(resourceCollectionItems)
-  .where(and(eq(..., ...), eq(..., ...))).limit(1);
+  .where(and(
+    eq(resourceCollectionItems.collectionId, collectionId),
+    eq(resourceCollectionItems.resourceId, resourceId),
+    isNull(resourceCollectionItems.deletedAt),
+  )).limit(1);
 ```
 
-Imperative `db.select().from()` is fine when you need a SQL feature RBQ doesn't expose (CTEs, custom joins on computed expressions, raw subqueries) — but it's the exception, not the default.
+Four things to keep in mind — the `drizzle-migrations` skill has the full version with reference sites:
+
+1. **Filters are object literals.** Use `notifiedAt: { isNotNull: true }`, `acceptedOn: { isNull: true }`, `email: { ilike: pattern }`, `role: { inArray: [...] }`. Don't import `eq` / `isNotNull` / `ilike` / `inArray` from `drizzle-orm` to use inside a `where`.
+2. **Fall back to `db.select`** only when RBQ can't express the query (PostGIS, raw `sql` projections, CTEs, custom joins on computed expressions). Leave a one-line comment explaining *why*. Canonical fallback: `resolveBoundary.ts:27-40` (`ST_Contains`).
+3. **Row types** come from `typeof <table>.$inferSelect`, not `InferModel<typeof <table>>`.
+4. **Project columns** with `columns: { foo: true }` when you only need a couple of fields — don't pull the whole row and throw most of it away.
+
+Writes (`db.insert` / `db.update` / `db.delete`) stay imperative; this preference is about the read path.
 
 ## Function and parameter naming
 

@@ -145,6 +145,26 @@ const [existing, { collectionIds }] = await Promise.all([
 
 Don't `await` sequentially when calls are independent. Reviewers will flag this.
 
+## Query style — prefer RBQ v2 (`db.query`) over `db.select`
+
+For reads, default to `db.query.<table>.findFirst / findMany` with object-form filters and explicit column projection — every service file under `@op/common` should follow this:
+
+```ts
+const rows = await db.query.decisionBoundaries.findMany({
+  where: { profileId, taxonomyTermId: { isNotNull: true } },
+  columns: { name: true },
+});
+```
+
+The rules in short — the `drizzle-migrations` skill has the full version with reference sites:
+
+1. **Object-literal filters, not imported operator functions.** Express `eq` / `isNotNull` / `isNull` / `ilike` / `inArray` / range predicates inline (`notifiedAt: { isNotNull: true }`, `acceptedOn: { isNull: true }`, `email: { ilike: pattern }`, `role: { inArray: [...] }`). Don't import `eq` / `isNotNull` / `ilike` from `drizzle-orm` to use inside a `where`. See `listUserInvites.ts:25-28` and `listProfileUserInvites.ts:30` for the pattern.
+2. **Fall back to `db.select().from().where()`** only when RBQ genuinely can't express the query — PostGIS / raw `sql` predicates, literal projections (`` sql`1` `` existence probes, `count(*)`, window functions), or CTEs / custom joins. When you fall back, leave a one-line comment explaining *why*. Canonical fallback: `resolveBoundary.ts:27-40` (`ST_Contains`).
+3. **Row types come from `typeof <table>.$inferSelect`**, not `InferModel<typeof <table>>`.
+4. **Project columns explicitly with `columns: { foo: true }`** when only one or two fields are needed, instead of pulling the whole row and discarding most of it.
+
+Writes (`db.insert` / `db.update` / `db.delete`) stay imperative — RBQ v2 doesn't replace them, and transactions wrapping several statements continue to use those operators on the `tx` handle.
+
 ## Auxiliary files — what goes where
 
 | File | Contents | Examples |
