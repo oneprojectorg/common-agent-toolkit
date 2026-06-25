@@ -259,14 +259,32 @@ no exceptions:
    suggested simplifications, then re-run `pnpm typecheck`,
    `pnpm test`, and `pnpm e2e` to confirm the simplified code
    still passes.
-2. `/review` — final code review on the diff. Address every
-   finding before signaling completion; if a finding is a
-   deliberate non-change, note the reason in the commit message
-   or task comment.
+2. `/review` — final code review on the diff, run as a **loop**
+   until the diff is ship-ready:
+   1. Run `/review` against the current diff. Always call the
+      codex adversarial review alongside it so both perspectives
+      score the same revision.
+   2. Apply the fixes for every finding (or, if a finding is a
+      deliberate non-change, record the reason in the commit
+      message or task comment so the next pass can see it).
+   3. Re-run `pnpm typecheck`, `pnpm test`, and `pnpm e2e` to
+      confirm the fixes didn't regress the gate suite.
+   4. Re-run `/review` (and the codex adversarial review) on the
+      updated diff.
+   5. Repeat 2–4 until a full pass produces no new actionable
+      findings — i.e. every remaining item is either already
+      addressed in this pass or explicitly marked as a deliberate
+      non-change. Only then is the diff ready to ship.
+
+   Treat "ready to ship" as the loop's only exit condition. Do
+   not exit because the loop has run N times, because the
+   remaining findings feel minor, or because you're confident
+   the reviewer will catch the rest — keep iterating until
+   `/review` comes back clean.
 
 Skip neither. "The diff is small" / "I already self-reviewed" /
 "there's nothing to simplify" are not valid reasons to skip —
-run both and let them confirm. Always call the codex adversarial review to also review our changes.
+run both and let them confirm.
 
 ### A failing or unrun gate is a STOP signal
 
