@@ -276,11 +276,19 @@ no exceptions:
       addressed in this pass or explicitly marked as a deliberate
       non-change. Only then is the diff ready to ship.
 
-   Treat "ready to ship" as the loop's only exit condition. Do
-   not exit because the loop has run N times, because the
-   remaining findings feel minor, or because you're confident
-   the reviewer will catch the rest — keep iterating until
-   `/review` comes back clean.
+   Cap the loop at **10 `/review` iterations**. If the 10th pass
+   still surfaces actionable findings, do NOT silently keep
+   looping and do NOT ship anyway — stop, post a comment on the
+   Asana task summarising the outstanding findings and what you
+   tried, and ask the user how to proceed. Treat this as a
+   hand-off, not a failure: the task stays in In-Progress while
+   you wait for direction.
+
+   Within that cap, "ready to ship" is the only exit condition.
+   Do not exit early because the remaining findings feel minor
+   or because you're confident the reviewer will catch the rest
+   — keep iterating until `/review` comes back clean or you hit
+   the 10-iteration cap.
 
 Skip neither. "The diff is small" / "I already self-reviewed" /
 "there's nothing to simplify" are not valid reasons to skip —
