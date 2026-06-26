@@ -30,6 +30,30 @@ Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@o
 - Use the custom scale: `text-title-lg`, `text-title-md`, `text-sm`, `text-body`, etc., defined in `packages/styles/shared-styles.css`.
 - Do **not** use raw Tailwind sizes (`text-[14px]`, `text-2xl`) unless that exact token is defined.
 - `<Header3>` already includes `text-title-base` and `font-weight: 300`. If you're composing a typography style, check what the heading component already gives you before stacking classes (PR #1039 review pattern).
+- Use the `<Header1>` … `<Header4>` heading components (in `@op/ui`) instead of raw `<h1>` / `<h2>` with handcrafted class lists. If a heading tier doesn't exist yet (`<Header4>`), add it — don't reach for `<h4 className="text-title-sm">` ad-hoc. PR #1262 review: "we can use the `<HeaderX>` components here. If there is no `<Header4>` then one can be added."
+
+## Tailwind sizing — stay on the scale
+
+Reach for the named Tailwind sizing scale (`max-w-96`, `max-w-112`, `gap-4`, `p-6`) before arbitrary values. PR #1323 review: "We should probably just fit this to a proper tailwind sizing. I would recommend one rem off here for max-w-112."
+
+- The scale already covers every multiple of `0.25rem` (`w-1` → `w-96`) and many beyond (`max-w-112` = 28rem). Snap to the nearest tier.
+- `w-[27rem]`, `max-w-[450px]`, `p-[14px]` are the smell. If a design genuinely needs an off-scale value, add a token in `packages/styles/tokens.css` and a class in `shared-styles.css` rather than sprinkling arbitrary values.
+
+## Reach for the existing component before writing a new one
+
+Most "I need a small X" components already exist. The recurring review-rejection shape is "we have a `<Y>` for this — use that." Examples from recent reviews:
+
+| You think you need… | Reach for | Source |
+|---|---|---|
+| A loading placeholder for a card / line / image | `<Skeleton>` | `@op/ui/Skeleton` |
+| A rich text editor with the Common toolbar | `<RichTextEditor>` | `@op/ui/RichTextEditor` |
+| A heading | `<Header1>` … `<Header4>` | `@op/ui` |
+| A page-level "you can't see this" / "this isn't here" screen | `<StatusScreen>` / `<ForbiddenScreen>` / `<PageError>` | `apps/app/src/components/screens/` |
+| An external link with consistent styling | `<ExternalLink>` (extract if it doesn't exist yet) | grep first |
+
+PR #1262 review: "We can use our `<Skeleton>` component here." PR #1287: "Can we use the standard RichTextEditor for this that has Tiptap and the Common styles builtin already?" PR #1360: extracted `StatusScreen` so `PageError` and `ForbiddenScreen` couldn't drift.
+
+When the existing component is *close* but not quite right, extend it (add a variant or a prop) instead of forking a new one — the second-use threshold from the variant section above applies to whole components too.
 
 ## Variants and design parity
 

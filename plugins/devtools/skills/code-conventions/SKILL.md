@@ -71,6 +71,22 @@ The current behavior is unprefixed. Only legacy gets the modifier.
 
 PR #1145 review: "We should never call these 'New'. This is the normal case whereas Legacy is an old case."
 
+### Don't keep destructure-local names in the outer scope
+
+A name like `rest`, `others`, `props` is meaningful inside the spread that produced it — but the moment that variable is used three lines later, it's a black box. Recurring review (PR #1293): "usage of the variable name 'rest' is really local to this spread.. beyond this line it's not really descriptive. We should give them better variable names."
+
+```ts
+// ❌ `rest` reads as "the leftovers from this destructure" — useless 10 lines later.
+const { config, ...rest } = savedFields;
+persist(rest);
+
+// ✅ Name it for what it actually is.
+const { config, ...savedFieldsWithoutConfig } = savedFields;
+persist(savedFieldsWithoutConfig);
+```
+
+Same rule for anonymous map callbacks (`(p) => …`) where the variable escapes the immediate scope.
+
 ### Domain-specific over generic
 
 Names should carry domain meaning. `Item`, `Row`, `Card` (alone) are red flags in component / function names.
@@ -118,6 +134,24 @@ Already covered in `api-endpoints` and `component-file-structure` skills. Re-sta
   - ❌ `assertProfileAccess(user, { profileId, permissions })`
 - A single-arg function can stay positional (`getCurrentProfileId(authUserId)`).
 - Be deliberate about which type goes into the param. `user: User` carries type safety; `user: { id: string }` will compile against any object with an `id`. PR #1245 review: "We probably want the User type here as well since we could inadvertently pass the wrong 'user' type here."
+
+## Control flow — no nested ternaries
+
+A single ternary for an obvious binary choice is fine. Stack two or more and reviewers will push back. PR #1332 review: "Not usually a fan of these nesting ternaries. we should try to avoid them generally."
+
+Three approved rewrites in roughly increasing order of cost:
+
+1. **Pull the choice into a named variable with `if` / `else`**, then return once. PR #1332 follow-up: "Picks the body via if/else into one variable, then a single guard + return."
+2. **Split the branches into sibling components** when each branch carries non-trivial JSX or its own props. PR #1317: "small thing, can we split these three into components so we don't have a big 'ol if statement in the function. this way we can easily see the branching and can isolate each component's dependencies — even a good use-case for a `match()`!" Resolved with a thin dispatcher + one component per treatment (`CompletedPhaseCard` / `CurrentPhaseCard` / `AdvanceablePhaseCard` / `UpcomingPhaseCard`).
+3. **Use `ts-pattern`'s `match()`** when the choice is a discriminated union — the type narrowing falls out for free.
+
+Inverse principle: don't add a flag prop (`isAdmin?`, `variant?`) to a component just to fork its render. Compose at the call site.
+
+## Derive lists from the source of truth, don't hardcode
+
+When the same list already exists somewhere (locales, slugs, entity types, env names), import it — don't re-type it. PR #1387 review: "We should probably create this from our locale list instead rather than hardcoding." A duplicated list is a source of skew, not a documentation aid; the moment a locale is added the hardcoded copy is wrong.
+
+If the source is exported from a different package and importing it would pull in a heavy graph, factor the list into a small standalone module that both can import. Don't keep the duplicate "just for now."
 
 ## Magic numbers and inline strings
 
