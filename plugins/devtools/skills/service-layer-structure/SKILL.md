@@ -143,7 +143,28 @@ const [existing, { collectionIds }] = await Promise.all([
 ]);
 ```
 
-Don't `await` sequentially when calls are independent. Reviewers will flag this.
+Don't `await` sequentially when calls are independent. Reviewers will flag this. PR #1320: "Looks like it can all be run in `Promise.all`?" / "Better move into `submitUserFlag` so that we can run in a `Promise.all`."
+
+## Don't re-fetch what the caller already has
+
+When the caller (router, parent service, or `<feature>Auth.ts` assertion) has already fetched the row you need, **take it as a parameter** instead of querying again. PR #1320 review: "We fetched this already upstream."
+
+```ts
+// ❌ The router asserted `parentProfileId`. The service refetches it.
+export const flagItem = async ({ user, itemId }) => {
+  const item = await assertModerationItemAccess({ user, itemId });
+  const profile = await db.query.profiles.findFirst({ where: { id: item.parentProfileId } });
+  // ...
+};
+
+// ✅ The assert returned what's needed. Use it.
+export const flagItem = async ({ user, itemId }) => {
+  const { item, parentProfile } = await assertModerationItemAccess({ user, itemId });
+  // parentProfile already loaded for the auth check; no second query.
+};
+```
+
+This is why `<feature>Auth.ts` assertions return resolved context (see the `<feature>Auth.ts` pattern above) — so the service doesn't re-query. If you find yourself fetching the same row in both the assert and the operation, fold the assert to return it.
 
 ## Query style — prefer RBQ v2 (`db.query`) over `db.select`
 

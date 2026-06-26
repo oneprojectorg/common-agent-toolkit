@@ -1,6 +1,6 @@
 ---
 name: component-file-structure
-description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect and a Suspense suffix for suspending components; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, or consuming API data in a component.
+description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect, react-query over raw fetch, and a Suspense suffix for suspending components; nuqs for URL-driven state (filters, multi-step forms, modal toggles); don't swallow errors in server components (try/catch + scoped fallback or let it throw to error.tsx); mutation errors go to onError, not call-site try/catch; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, fetching data, handling errors in RSC, picking nuqs vs useState, or consuming API data in a component.
 ---
 
 ## Order inside a file
@@ -28,8 +28,28 @@ The primary export should never be buried at the bottom under utilities.
 ## Data fetching
 
 - **Always prefer Suspense queries** (`useSuspenseQuery`, `useSuspenseQueries`) over `useQuery` + `useEffect` patterns.
+- **Reach for react-query (`useSuspenseQuery` / `useQuery`) over raw `fetch` + `try`/`catch`.** Raw fetches in a component duplicate everything react-query already gives you — caching, dedup, retries, error state. PR #1262 review: "We should lean into useSuspenseQuery and useQuery instead of fetch. This bakes in react-query so we get all the benefits of caching. We can avoid the try/catch there as a result."
 - Wrap suspense queries with a proper `<ErrorBoundary>` — never let a thrown promise escape into a parent that doesn't handle it.
 - **Name suspending components with a `Suspense` suffix.** If a component calls `useSuspenseQuery` or `useSuspenseQueries`, name it `MyComponentSuspense` (e.g. `OrganizationSearchScreenSuspense`, `DecisionOverviewSuspense`). The name signals to every caller that the component suspends and must be rendered under a `<Suspense>` / `<ErrorBoundary>` boundary — there's no other way to tell from the call site. Review feedback (#1248): "It's really nice to keep the standard of `DecisionOverviewSuspense` so it's visible to see that this component will suspend."
+
+### Don't swallow errors
+
+In server components (RSC) and async loaders, surface failures — don't `.catch(() => null)` a section into silent emptiness. Two reviewer-approved shapes:
+
+- **`try` / `catch` around the fetch** and render a small in-place fallback ("couldn't load X") scoped to that section, not the whole page. PR #1350: "switched it to surface a small 'couldn't load pinned resources' message in the section instead of silently rendering nothing. scoped to its own boundary so a failure here doesn't take down the whole overview."
+- **Let it throw** and rely on the nearest `error.tsx` (or a wrapping `<ErrorBoundary>`) to render the fallback. PR #1417 review: "Let's use try/catch here." PR #1341: "I don't think we should swallow errors here."
+
+The anti-pattern is `await fetchX().catch(() => undefined)` followed by silently rendering nothing — users can't tell whether the section is empty or broken, and the error never reaches the error reporter.
+
+### URL-driven UI state uses `nuqs`
+
+When a piece of UI state should survive a reload, be link-shareable, or be readable by the server (e.g. filters, multi-step form progress, modal open/close, sign-in mode toggle), reach for **`nuqs`** instead of `useState`. Recurring review (PRs #1304, #1323): "use nuqs here for sure (as this one is a complicated beast of a form)" / "Maybe we should just standardize to nuqs here — they support server-side parsing as well" / "Filter state lives in the URL (nuqs)."
+
+Keep `useState` for ephemeral state nobody links to (hover, focus, currently-typed-but-unsubmitted text). Anything you'd want a back/forward button to step through, or want to deep-link to, belongs in `nuqs`.
+
+### Mutation errors go to `onError`, not the call site
+
+When a mutation can fail, handle the failure in the mutation's `onError` callback — not in a `try` / `catch` around the `mutate()` call, and not in a sibling effect that watches for `mutation.isError`. PR #1293 review: "Should this go to the mutation's onError callback instead?" That's the one place that runs exactly once per failed mutation, has access to the typed error, and composes with `toast.error` / form-error wiring already in the codebase.
 
 ### Cache invalidation — realtime channels, never manual
 

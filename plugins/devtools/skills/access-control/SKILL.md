@@ -116,6 +116,18 @@ When you need the same (fetch + assert + return useful ids) shape in a new domai
 
 For read endpoints, prefer `permission.READ` over `permission.ADMIN` even for admin-only views — admins inherit READ, and a future role refactor might expose a non-admin role that can read but not write. PR #1208: "I like this being `permission.READ`" — gives room for non-admin readers later without changing the gate.
 
+## Be conservative when broadening user / profile reads
+
+Adding a field to the `user` / `profile` encoder, or to a "list users" service, is a place where auth-sensitive data leaks if it's not deliberate. Email, phone, `is_anonymous`, role lists, and similar fields are the recurring offenders. PR #1297 review: "One reason for previously not adding this in prior is that it makes it way too easy to leak details related to auth to other users (including things that might be auth only like phone number). Any reason it was added here?"
+
+Before adding a field that exposes another user to the caller:
+
+1. **Filter at the encoder / schema layer**, not at the service. The encoder is the wire boundary; if the field shouldn't reach an unrelated viewer, it shouldn't be on the encoder unconditionally.
+2. **If it's owner-only, encode it conditionally** — `services/api/src/encoders/posts.ts` returns extra owner-only fields based on the caller. The pattern is to encode the public shape by default and `.extend({ /* owner-only */ })` when the caller matches.
+3. **Default to the narrower shape** if you're unsure. A follow-up to add the field later is cheap; a leak that ships behind a deploy is not.
+
+The procedure tier doesn't protect against this — `networkAuthenticatedProcedure` still lets every in-network user fetch every other user's row. The encoder + service do the filtering.
+
 ## Authorization errors — `UnauthorizedError` and `AccessTierError`
 
 Two distinct error types model the two failure modes:
