@@ -1,6 +1,6 @@
 ---
 name: service-layer-structure
-description: How to organize a feature's service layer in packages/common/src/services/<feature>/ — one file per operation (createX / getX / listX / updateX / deleteX), all named exports, named-params object signatures, auth-assert first, transactions with advisory locks for concurrent ops, Common errors only. Plus the auxiliary file conventions — schemas.ts (Zod + DTO types), constants.ts (shared limits + security allowlists), utils.ts (pure helpers), <feature>Auth.ts (domain assertions that return useful context), channelScope.ts (realtime fan-out helpers), and ordering.ts (sort-key utilities). Use when adding a new service operation, adding a new feature directory under @op/common, organizing helpers around a service file, deciding where a piece of logic belongs, or writing a transaction.
+description: How to organize a feature's service layer in packages/common/src/services/<feature>/ — one file per operation (createX / getX / listX / updateX / deleteX), all named exports, named-params object signatures, auth-assert first, transactions with advisory locks for concurrent ops, Common errors only. Plus the auxiliary file conventions — schemas.ts (Zod + DTO types), constants.ts (shared limits + security allowlists), utils.ts (pure helpers), <feature>Auth.ts (domain assertions that return useful context), channelScope.ts (realtime fan-out helpers), and ordering.ts (sort-key utilities). Cursor pagination rules — always include an id tie-breaker so rows that share a sort-key timestamp don't get skipped, and gate the cursor on `cursorValue != null` so falsy-but-valid sort values (e.g. rubric score 0) keep paging. Use when adding a new service operation, adding a new feature directory under @op/common, organizing helpers around a service file, designing a paginated listX, deciding where a piece of logic belongs, or writing a transaction.
 ---
 
 The service layer in `packages/common/src/services/<feature>/` is the home of the business logic that tRPC routers thinly wrap. Conventions here are the most consistent in the codebase — reviewers spot deviations quickly.
@@ -185,6 +185,42 @@ The rules in short — the `drizzle-migrations` skill has the full version with 
 4. **Project columns explicitly with `columns: { foo: true }`** when only one or two fields are needed, instead of pulling the whole row and discarding most of it.
 
 Writes (`db.insert` / `db.update` / `db.delete`) stay imperative — RBQ v2 doesn't replace them, and transactions wrapping several statements continue to use those operators on the `tx` handle.
+
+## Cursor pagination — tie-breaker on id, null-safe `cursorValue`
+
+`listX` operations that page over `createdAt` / `updatedAt` / `score` need two rules to be correct under concurrent inserts and falsy-but-valid sort values. PR #1304 (`listProposals` / `listAllProposals` infinite scroll) failed both before review.
+
+### Always add an id tie-breaker to order + cursor
+
+Two rows that share a `createdAt` (same millisecond — yes, this happens) sort un-deterministically when the only `orderBy` is `createdAt`. The cursor for "last row of page N" then matches the next page's start row inclusively/exclusively at random and **skips rows**. Tie-break with the primary key:
+
+```ts
+const orderBy = [
+  desc(proposals.createdAt),
+  desc(proposals.id),  // tie-breaker — no row is "equal to" another
+];
+
+// Cursor: (createdAt, id) pair. The where becomes a lexicographic compare:
+//   createdAt < cursor.createdAt OR (createdAt = cursor.createdAt AND id < cursor.id)
+```
+
+PR #1304: "paging on `createdAt` / `updatedAt` alone skips rows that share a boundary timestamp, which matters now that this endpoint drives results-phase infinite scroll." Mirror this in every new `listX` that supports infinite scroll. Covered by the regression test "does not skip rows that share a boundary timestamp."
+
+### Gate the cursor on `cursorValue != null`, not on truthiness
+
+When deriving the next cursor from the last item of a page, gate on `!= null` — not on a truthy check — because a falsy-but-valid value (a rubric score of `0`, a vote count of `0`, an empty string) is a perfectly fine sort key:
+
+```ts
+// ❌ Breaks when sorting on rubric score and the last item's score is 0.
+const nextCursor = hasMore && lastItem && cursorValue ? { ... } : null;
+
+// ✅ Falsy values stay paginable.
+const nextCursor = hasMore && lastItem && cursorValue != null ? { ... } : null;
+```
+
+PR #1304 review (nourmalaeb): "If we sort on rubric scores or something where `cursorValue` can be falsy (e.g the rubric score is `0`) this breaks." Both `listProposals` and `listAllProposals` were hardened to `cursorValue != null` in the same PR.
+
+The same rule extends to any "is there a next page" check: gate on `lastItem` (not undefined) and on `cursorValue != null` (not truthy), separately.
 
 ## Auxiliary files — what goes where
 

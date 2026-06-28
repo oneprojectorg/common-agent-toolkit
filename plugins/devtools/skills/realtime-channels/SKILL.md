@@ -135,6 +135,14 @@ Two things to notice:
 - **Snapshot the scope before the mutation.** Once the resource is deleted, the join rows are gone — `getScopesForResource` won't find anything. Resolve the fan-out targets *first*, mutate *second*.
 - **Helpers live in the service, not the router.** The router is thin — it asks the service "what's the scope?" and "do the work" and combines the two.
 
+## Register channels synchronously, in the request path
+
+`registerMutationChannels` must run **inside the request that performed the write**, not in a deferred job, an event listener, or a "fire-and-forget" promise. The realtime layer batches channels at request commit time; a registration that lands in a later tick is dropped or arrives after the client has already moved on, and the UI silently stops invalidating.
+
+PR #1392 (`perf(decisions): cache instance and categories in Redis`) called this out on the `transitionMonitor` path: "Noting the synchronous invalidation which is important for realtime channel invalidations." That endpoint flips state *and* registers channels in the same synchronous flow — splitting the registration into a follow-up event would have broken the invalidation. Same applies to any code that's tempted to register channels from a setTimeout, a Promise without `await`, or a queued background job.
+
+If a mutation genuinely runs work asynchronously (e.g. enqueues a job that completes minutes later), the synchronous part still registers the channels for the queued work's expected side-effects so the UI knows what to invalidate when the realtime broadcast eventually arrives.
+
 ## Channel registration on procedures
 
 This belongs in `api-endpoints`, but for symmetry:

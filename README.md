@@ -38,11 +38,11 @@ Then commit the resulting diff.
 | Skill | What it covers |
 |---|---|
 | `access-control` | Authorization via the `access-zones` library and our wrappers (`assertProfileAccess`, `assertOrgAccess`, `assertProfileAdmin`, `<AccessBoundary>`, `AccessTierError`). |
-| `api-endpoints` | Adding / editing tRPC endpoints — the 4-tier procedure model (`networkAuthenticated` / `authenticatedConfirmed` / `authenticated` / `open`), encoder pattern, schemas in `@op/common`, realtime channels. |
+| `api-endpoints` | Adding / editing tRPC endpoints — the 4-tier procedure model (`networkAuthenticated` / `authenticatedConfirmed` / `authenticated` / `open`), encoder pattern, schemas in `@op/common`, realtime channels, and filtering auth-sensitive fields at the encoder so they can't leak from a future query. |
 | `asana-api` | Talking to Asana directly via the REST API. |
 | `branch-and-pr` | Branching and pull-request workflow. |
 | `code-conventions` | Cross-cutting review patterns — composition over duplication, naming (no acronyms, `get`/`assert` prefixes, descriptive names over destructure-local ones), scope discipline (one task per PR), no nested ternaries (lift to `if`/`else`, sibling components, or `match()`), derive lists from the source of truth (no hardcoded duplicates), type escape-hatch avoidance, casts at the DB boundary, Common error types. |
-| `component-file-structure` | Conventions for organizing a React component file — Suspense suffix, react-query over raw fetch, `nuqs` for URL-driven state, don't swallow errors in RSC, mutation errors in `onError`, no `Record<string, unknown>`, composition over duplication, optional vs undefined. |
+| `component-file-structure` | Conventions for organizing a React component file — Suspense suffix, react-query over raw fetch, single-fetch RSC + client `useSuspenseQuery` hydration (one server fetch seeds the cache the client query hydrates from), `nuqs` for URL-driven state, don't swallow errors in RSC, mutation errors in `onError`, reusable hooks take a `navigateTo` callback instead of a hardcoded route, `startTransition` for non-urgent post-mutation work, no `Record<string, unknown>`, composition over duplication, optional vs undefined. |
 | `dev-environment` | Local dev stack — docker layout, port map, `.env.local` vs `.env.docker`, Supabase Studio + Mailpit, driving the running app from Playwright. |
 | `drizzle-migrations` | Drizzle ORM workflow for schema edits + the relational-query (`db.query.X`) preference for reads. |
 | `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`, plus `getTranslations` for metadata and the i18n `useRouter`. |
@@ -50,9 +50,9 @@ Then commit the resulting diff.
 | `op-ui-conventions` | Using `@op/ui` + `@op/sense`, design tokens, and the type scale. |
 | `pickup-task` | Pick up the next available Agent task from Asana and claim it atomically. |
 | `pr-description` | Conventions for PR bodies — concise (usually one paragraph), lead with *what* and *why*, no test-plan checklist, no diff walk-through; mermaid ERDs for schema PRs and stacked-PR references when they earn the space. |
-| `realtime-channels` | Naming + design of `Channels.X` builders — `scope[:id]` convention, JSDoc subscriber/broadcaster pairing, when to add a channel vs reuse one, and the `channelScope.ts` helper pattern for fanning invalidations across multi-tenant resources. |
+| `realtime-channels` | Naming + design of `Channels.X` builders — `scope[:id]` convention, JSDoc subscriber/broadcaster pairing, when to add a channel vs reuse one, the `channelScope.ts` helper pattern for fanning invalidations across multi-tenant resources, and registering channels synchronously in the request path (never from a deferred callback). |
 | `release` | Open the dev → main release PR (invokable as `/release`). |
-| `service-layer-structure` | How to organize `packages/common/src/services/<feature>/` — one file per operation, named-params signatures, auth-assert first, transactions with sorted-id locks, and the `<feature>Auth.ts` / `channelScope.ts` / `schemas.ts` / `constants.ts` / `utils.ts` auxiliary-file conventions. |
+| `service-layer-structure` | How to organize `packages/common/src/services/<feature>/` — one file per operation, named-params signatures, auth-assert first, transactions with sorted-id locks, cursor pagination with an id tie-breaker and a null-safe `cursorValue != null` gate, and the `<feature>Auth.ts` / `channelScope.ts` / `schemas.ts` / `constants.ts` / `utils.ts` auxiliary-file conventions. |
 | `test-conventions` | Vitest vs Playwright layout, `.test.ts` vs `.spec.ts`, the E2E env shim, `describeAccessTierGating`, and choosing which kind of test to add. |
 | `vercel-react-best-practices` | Vendored from [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — React/Next.js performance rules. MIT-licensed; refreshed via `scripts/sync-vercel.sh`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
