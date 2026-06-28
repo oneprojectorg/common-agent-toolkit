@@ -138,6 +138,12 @@ A few encoders intentionally duplicate a `@op/common` schema's shape (e.g. `serv
 - Consumers (the frontend) import the type from `@op/api/encoders` (e.g. `import type { Organization } from '@op/api/encoders'`).
 - **Never derive types from `RouterOutput['x']['y']`.** It couples callers to the router shape and breaks on refactor. Need a type that doesn't exist? Add/extend the encoder and export its `z.infer` type — don't reach for `RouterOutput` as a shortcut.
 
+### Auth-sensitive fields are filtered at the encoder, not at every consumer
+
+When a row carries fields that should only ever be returned to certain callers (phone number, email-change pending state, `is_anonymous`, internal flags), **strip them at the encoder** — that's the single point every consumer must pass through, so a leak can't be reintroduced by a future query that forgets to omit the column. PR #1297 review: "One reason for previously not adding this in prior is that it makes it way too easy to leak details related to auth to other users (including things that might be auth only like phone number). Any reason it was added here?" Resolution: "We should fix this in the encoder/schema level I think."
+
+Practically: define a base encoder that omits the sensitive fields (`publicUserEncoder = createSelectSchema(users).omit({ phone: true, ... })`) and a separate `privateUserEncoder` for the self-only endpoints. The two encoders make the auth boundary visible in the type graph — a procedure that returns the public shape can't accidentally leak a private field, because the type itself doesn't carry it.
+
 ### Cast discipline
 
 Cast as **close to the DB query as possible** — a single consistent cast that lives next to where data enters the typed system. Casting the same JSON column at every consumer is a recurring review-rejection pattern. If `instanceData` (or any JSON field) needs a stricter type than Drizzle infers, narrow it once at the schema/service layer and let the rest of the code be strictly typed downstream. **Don't treat JSON DB fields as untyped** — they're not typed at the DB level, but they should be typed in TypeScript.

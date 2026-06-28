@@ -1,6 +1,6 @@
 ---
 name: component-file-structure
-description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect, react-query over raw fetch, and a Suspense suffix for suspending components; nuqs for URL-driven state (filters, multi-step forms, modal toggles); don't swallow errors in server components (try/catch + scoped fallback or let it throw to error.tsx); mutation errors go to onError, not call-site try/catch; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, fetching data, handling errors in RSC, picking nuqs vs useState, or consuming API data in a component.
+description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect, react-query over raw fetch, and a Suspense suffix for suspending components; single-fetch RSC + client useSuspenseQuery (server fetch seeds the dehydrated cache, no double-fetch); nuqs for URL-driven state (filters, multi-step forms, modal toggles); don't swallow errors in server components (try/catch + scoped fallback or let it throw to error.tsx); mutation errors go to onError, not call-site try/catch; reusable hooks take a navigateTo callback, not a hardcoded route; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, fetching data on the server vs the client, handling errors in RSC, picking nuqs vs useState, designing a hook's interface, or consuming API data in a component.
 ---
 
 ## Order inside a file
@@ -32,6 +32,36 @@ The primary export should never be buried at the bottom under utilities.
 - Wrap suspense queries with a proper `<ErrorBoundary>` — never let a thrown promise escape into a parent that doesn't handle it.
 - **Name suspending components with a `Suspense` suffix.** If a component calls `useSuspenseQuery` or `useSuspenseQueries`, name it `MyComponentSuspense` (e.g. `OrganizationSearchScreenSuspense`, `DecisionOverviewSuspense`). The name signals to every caller that the component suspends and must be rendered under a `<Suspense>` / `<ErrorBoundary>` boundary — there's no other way to tell from the call site. Review feedback (#1248): "It's really nice to keep the standard of `DecisionOverviewSuspense` so it's visible to see that this component will suspend."
 
+### Single-fetch RSC: server fetch seeds the client query cache
+
+When a page renders the same query on the server *and* in a client subtree (the usual case for a page that loads quickly via RSC but wants client-side cache, refetches, or realtime invalidation downstream), the right shape is **one fetch on the server that seeds the dehydrated cache the client `useSuspenseQuery` hydrates from** — not two independent fetches. PR #1332 review: "Fetching `getInstance` here looks redundant with the client `useSuspenseQuery` in `DecisionOverviewContent`, but it's one fetch, not two: `utils…fetch()` renders the body as RSC **and** seeds the cache the client query hydrates from. Single fetch, no server/client divergence." PR #1417 (`perf(decisions): single-fetch /overview`) was the cleanup pass that dropped a redundant `getInstance` after this pattern was established.
+
+```tsx
+// server: page.tsx — fetch once on the server, hand off via the dehydrated cache
+const utils = await getServerUtils();
+const instance = await utils.decision.getInstance.fetch({ instanceId });
+
+return (
+  <HydrationBoundary state={dehydrate(utils.queryClient)}>
+    {/* ServerComponent rendered with `instance` for synchronous body output… */}
+    <DecisionOverview aboutSlot={<RichTextRenderer doc={instance.overview.body} />}>
+      {/* …client subtree hydrates from the same query — no second network call */}
+      <DecisionOverviewSuspense instanceId={instanceId} />
+    </HydrationBoundary>
+  </HydrationBoundary>
+);
+```
+
+```tsx
+// client: DecisionOverviewSuspense.tsx — re-uses the seeded cache entry
+const { data: instance } = trpc.decision.getInstance.useSuspenseQuery({ instanceId });
+```
+
+Two things to avoid:
+
+- **Don't refetch the same query in a child client component just for typing.** That's the regression PR #1417 fixed. If the parent (server or client) already has the row, pass the resolved value or use a `useSuspenseQuery` with the same key — the cache entry is already there.
+- **Don't pre-render rich content in the client.** When the body of a section is server-renderable HTML/JSON (a TipTap doc, a markdown block), render it on the server and pass it down as a `ReactNode` slot prop — the prose ships as HTML with zero client JS, only the interactive islands stay client. PR #1332: "`aboutSlot` is the body pre-rendered on the **server** (RSC, in page.tsx) and passed as a slot into this client component… only LinkPreview embeds stay client islands."
+
 ### Don't swallow errors
 
 In server components (RSC) and async loaders, surface failures — don't `.catch(() => null)` a section into silent emptiness. Two reviewer-approved shapes:
@@ -50,6 +80,42 @@ Keep `useState` for ephemeral state nobody links to (hover, focus, currently-typ
 ### Mutation errors go to `onError`, not the call site
 
 When a mutation can fail, handle the failure in the mutation's `onError` callback — not in a `try` / `catch` around the `mutate()` call, and not in a sibling effect that watches for `mutation.isError`. PR #1293 review: "Should this go to the mutation's onError callback instead?" That's the one place that runs exactly once per failed mutation, has access to the typed error, and composes with `toast.error` / form-error wiring already in the codebase.
+
+### Reusable hooks: pass the navigation callback, don't construct it
+
+When a hook orchestrates a mutation **and** then triggers a navigation (the "do X, then go to the new resource" pattern), take a **`navigateTo`** / **`navigateAfter`** callback from the caller — don't build the route inside the hook. PR #1291 review on `useCreateProposal`: "I'd rather we pass a `navigateTo` or `navigateAfter` than construct the path in this hook." Constructing the path inside the hook hard-couples it to one consumer's URL shape and breaks the next time the same hook is needed from a different surface (e.g. an admin tool vs the public page).
+
+```ts
+// ✅ Reusable — caller decides what "after success" means.
+const { mutate } = useCreateProposal({
+  onSuccess: ({ proposalId }) => {
+    startTransition(() => {
+      router.replace(routes.decision.proposalEdit(slug, proposalId));
+    });
+  },
+});
+
+// ❌ Hard-coded — the hook now only works in one place.
+const { mutate } = useCreateProposal({ instanceSlug: slug });  // routes itself
+```
+
+The same principle applies to copy / toasts / analytics events — make the side effects parameters of the hook, not assumptions baked into it. The hook is reusable iff it doesn't know which page is calling it.
+
+### Use `startTransition` for non-urgent post-mutation work
+
+After a mutation resolves, wrapping the follow-up navigation / cache wiring in `startTransition` (from `react`) keeps the click-handling responsive — React deprioritizes the transition so a slow re-render of the destination doesn't block the optimistic UI on the page the user just clicked from. PR #1291 review: "Can we use `startTransition`?" → adopted.
+
+```ts
+const [isPending, startTransition] = useTransition();
+
+const onSuccess = ({ proposalId }: { proposalId: string }) => {
+  startTransition(() => {
+    router.replace(routes.decision.proposalEdit(slug, proposalId));
+  });
+};
+```
+
+This applies most directly to navigation, suspense-triggering state changes, and large list re-keys. `isPending` is also a clean source for a "we're working on it" indicator that doesn't lie about which step is slow.
 
 ### Cache invalidation — realtime channels, never manual
 
