@@ -68,6 +68,7 @@ The bare router strips the locale prefix on `router.push('/foo')` and the user l
 1. Use `t("New string")` (or `<TranslatedText>`) in code first.
 2. Add `"New string": "New string"` to `en.json`.
 3. Add a translation for **every other `.json` file** in `apps/app/src/lib/i18n/dictionaries/`. List them with `ls apps/app/src/lib/i18n/dictionaries/` so you don't miss one when the locale set changes. Translate the value into the target language; keep the key identical to the English source. Don't leave a locale missing or stubbed with the English string.
+4. **Keep key order in sync across every locale file.** Put new keys in the same position — one contiguous block — in every `.json`, not appended in random order per file, so the dictionaries diff side by side. PR #1480 review: "a nit here.. it's nice to keep the languages in sync in terms of order of keys so they can be easily compared."
 
 ## Don't
 

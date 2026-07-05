@@ -13,6 +13,8 @@ description: How to add or change a tRPC API endpoint in services/api — one pr
 
 Business logic does **not** live here. It lives in `@op/common` services (`packages/common/src/services/...`). The procedure validates, declares channels, calls the service, and encodes the output. Authorization is asserted in the service — see the `access-control` skill.
 
+**No DB access at the router level.** A router must not `import` from `@op/db` or run a query / transaction directly — that is a service concern. PR #1480 review, on a router that pulled in the DB directly: "We never pull in the DB to the router level (or at least never should)" and "Everything below this should be in a service instead." Resolution replaced a fat base64 router with thin sign/update routers that delegate to `@op/common` services.
+
 ## The 4-tier procedure model
 
 `commonAuthedProcedure` was renamed in PR #1240. There are now four factories, each declaring the endpoint's auth posture at the type level:
@@ -207,7 +209,7 @@ Writes (`db.insert` / `db.update` / `db.delete`) stay imperative; this preferenc
 
 ## Don't
 
-- **Don't put business logic in the router.** Delegate to a `@op/common` service.
+- **Don't put business logic in the router, and never touch the DB from it.** No `@op/db` import, no direct query / transaction in a router — delegate to a `@op/common` service (PR #1480: "We never pull in the DB to the router level").
 - **Don't skip `.output()`** or return raw DB rows. Always encode + `parse`.
 - **Don't derive types from `RouterOutput`.** Use encoder `z.infer` types from `@op/api/encoders`.
 - **Don't manually invalidate queries.** Register channels on the query and the mutation.

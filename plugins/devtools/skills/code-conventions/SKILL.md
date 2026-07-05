@@ -54,13 +54,20 @@ Write the word.
 - `description`, not `desc`
 - `organization`, not `org` (variable names — directory names like `org/` are fine)
 - `AccessTier`, not just `Tier` (PR #1225 review: "Keeping it consistent means it's easier to grep generally")
-- `index`, not `i`; `response`, not `res` — even in tight loops
+- `response`, not `res` — even in tight loops
+- The ONLY acceptable single-letter names are the universal conventions: `i` / `j` as a loop index and `t` as the translation function. Don't alias your own helpers to a single letter — no `h()` for a `createElement`-style shortcut. PR #1405 review: "we don't need to make this harder to read and reason about by calling it h() ... We always prefer longer names unless it is REALLY a common shortening (like `t()` or `i` in a loop)."
 
 ### Consistency over brevity
 
 - `maxVotesPerMember` over `maxVotes` — leaves naming room for `maxVotesPerOrganization`, `maxVotesPerProposal` later.
 - `addedByProfileUserId` over `addedById` — matches neighboring columns in the schema.
 - Don't shorten a name just because it appears in two places — repeated long names are easier to search than synonyms.
+
+### Name by meaning, not by location
+
+Name a property for what it *is*, not for the one place it's currently rendered. A field displayed as a background today will appear in headers, cards, and previews tomorrow — a location-based name goes stale the moment a second use site lands. PR #1480 review on an image field named `backgroundImage`: "backgroundImage is an odd naming since it's not the background of the decision and will be displayed in many more places than a background. Maybe heroImage or headerImage is a better bet." Resolution: renamed to `heroImage` across schema / encoders / services / hooks.
+
+Corollary: don't mix multiple terms for one concept. Juggling `Banner` vs `OverviewImage` vs `backgroundImage` for the same field is a smell — pick one semantic name for the backend property and use it everywhere.
 
 ### Don't prefix the normal case
 

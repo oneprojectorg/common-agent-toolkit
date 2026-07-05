@@ -1,6 +1,6 @@
 ---
 name: component-file-structure
-description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect, react-query over raw fetch, and a Suspense suffix for suspending components; single-fetch RSC + client useSuspenseQuery (server fetch seeds the dehydrated cache, no double-fetch); nuqs for URL-driven state (filters, multi-step forms, modal toggles); don't swallow errors in server components (try/catch + scoped fallback or let it throw to error.tsx); mutation errors go to onError, not call-site try/catch; reusable hooks take a navigateTo callback, not a hardcoded route; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, fetching data on the server vs the client, handling errors in RSC, picking nuqs vs useState, designing a hook's interface, or consuming API data in a component.
+description: React component file organization and conventions — types at top, main export next, helpers below; Suspense queries over useEffect, react-query over raw fetch, and a Suspense suffix for suspending components; single-fetch RSC + client useSuspenseQuery (server fetch seeds the dehydrated cache, no double-fetch); nuqs for URL-driven state (filters, multi-step forms, modal toggles); don't swallow errors in server components (try/catch + scoped fallback or let it throw to error.tsx); mutation errors go to onError, not call-site try/catch; reusable hooks take a navigateTo callback, not a hardcoded route; minimal 'use client' (prefer server components / TranslatedText); explicit names (no single letters or abbreviations, no "New" prefix); no any / as / non-null !; consume API types from @op/api/encoders (never RouterOutput); no Record<string, unknown> as a typed-JSON escape hatch; composition over duplication when a pattern appears twice; pass a whole object (and a single permissions object) instead of many flattened props, and decompose a ballooning prop list into composable sub-components; loading skeletons and above-the-fold layout must be SSR-able / CSS-only, not gated on a client-only library; never manually invalidate queries (realtime channels do it). Use when creating a new .tsx file, splitting a component, extracting a helper, naming things, deciding client vs server, deciding where types go, fetching data on the server vs the client, handling errors in RSC, picking nuqs vs useState, designing a hook's interface, designing a component's props, writing a loading skeleton, or consuming API data in a component.
 ---
 
 ## Order inside a file
@@ -137,7 +137,7 @@ Optimistic updates are still allowed — they're for instant feedback / ordering
 
 ## Naming
 
-- **No single-letter names** and **no shortened abbreviations** — they're unclear at the call site. Write `organization`, not `o` or `org`; `index`, not `i`; `response`, not `res`; `authorization`, not `authz`. Spell it out.
+- **No single-letter names** and **no shortened abbreviations** — they're unclear at the call site. Write `organization`, not `o` or `org`; `index` over a bespoke `i`; `response`, not `res`; `authorization`, not `authz`. Spell it out. The only accepted universal exceptions are a loop counter `i` / `j` and the translation `t()` (#1405); don't invent other self-aliased single letters like `h()`.
 - Names should read on their own. A reader should never have to find the declaration to know what a variable holds.
 - **Don't prefix the normal case with "New"** — only legacy cases get the modifier. `DecisionHeader` and `LegacyDecisionHeader`, not `NewDecisionHeader` and `DecisionHeader`.
 - **Domain-specific names beat generic ones**: `ProposalReviewCard`, not `Item`. Reviewers flag generic names in any non-leaf component.
@@ -153,6 +153,12 @@ This is the single most common review-rejection theme in the codebase. When you 
 - When a file is getting "thick" (`ProposalsList.tsx` is the running gag), don't add another conditional branch — split out a sibling component. Reviewers will still merge a fat file with a note ("this file needs a refactor"), but new feature work shouldn't pile on.
 - The third copy is the merge-blocker. The first occurrence is fine. The second is a flag. The third gets the PR sent back.
 
+## Prop design
+
+- **Pass the whole object, not its flattened fields.** When you'd hand a component 3+ fields off the same entity, pass the entity. PR #1439 review on `DecisionOverview` (three flattened steward props): "Maybe just pass in the steward?" — resolved by passing the whole `steward` object.
+- **Multiple permission props → one permissions object.** PR #1470 review: "This actually should have just been passed permissions originally. As soon as we start to have multiples of these permission props we should probably just pass permission objects."
+- **A ballooning prop list is a decomposition smell.** PR #1450 review: "that is a lot of props :) It feels like a sign that we need to compose out of a few components." Split into composable sub-components (which also enables reuse, e.g. a standalone filter bar) — see **Composition over duplication** above.
+
 ## Magic numbers and inline strings
 
 - Extract numeric constants when the meaning isn't obvious. `86_400_000` → `MILLISECONDS_PER_DAY` (or a date library — `date-fns` is in the codebase).
@@ -162,6 +168,11 @@ This is the single most common review-rejection theme in the codebase. When you 
 ## Optional vs undefined
 
 When a prop is truly optional, prefer `prop?: T` (which resolves to `T | undefined`) over `prop: T | undefined`. Don't introduce an extra type alias (`type Cap = number | undefined`) — it's defensive and obscures the API. PR #1033 closed by **dropping** the `VoteCap` type entirely in favor of inline `maxVotesPerMember?: number`.
+
+## Skeletons and above-the-fold layout must be SSR-able
+
+- **Don't gate a loading skeleton (or above-the-fold layout) on a client-only library.** It should paint on first byte, not wait for client JS to load and hydrate. PR #1455 review on a masonry skeleton: "Do we really need to do the masonry here? Let's just use CSS grid for this so we can SSR it" and "Let's fix the Skeleton as we want that to appear as soon as possible rather than after we have loaded the masonry library on the client."
+- **Approximate the layout with pure CSS.** For a masonry placeholder, CSS columns get you close enough without the client lib: `columns-1 md:columns-2 lg:columns-3 gap-6` on the container, with `mb-6 break-inside-avoid` on each child. Swap in the real client-only layout only once the data has loaded.
 
 ## Performance
 
