@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 18 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
+One install gives engineers the full agent harness for this codebase: 19 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
 ## Install
 
@@ -45,6 +45,7 @@ Then commit the resulting diff.
 | `component-file-structure` | Conventions for organizing a React component file — Suspense suffix, react-query over raw fetch, single-fetch RSC + client `useSuspenseQuery` hydration (one server fetch seeds the cache the client query hydrates from), `nuqs` for URL-driven state, don't swallow errors in RSC, mutation errors in `onError`, reusable hooks take a `navigateTo` callback instead of a hardcoded route, `startTransition` for non-urgent post-mutation work, no `Record<string, unknown>`, composition over duplication, optional vs undefined. |
 | `dev-environment` | Local dev stack — docker layout, port map, `.env.local` vs `.env.docker`, Supabase Studio + Mailpit, driving the running app from Playwright. |
 | `drizzle-migrations` | Drizzle ORM workflow for schema edits + the relational-query (`db.query.X`) preference for reads. |
+| `file-uploads` | Signed-URL upload flow for files/images (sign → PUT-direct-to-Supabase → record), the server-side trust boundaries (stored-MIME re-check, size cap, anti-hijack path prefix), shared upload constants in `@op/common` `utils/storage.ts`, and the `@op/common/client` import boundary for client components. |
 | `i18n-strings` | Wrapping user-facing strings with translations in `apps/app`, plus `getTranslations` for metadata and the i18n `useRouter`. |
 | `implement-task` | End-to-end implementation flow for a claimed Asana task. |
 | `op-ui-conventions` | Using `@op/ui` + `@op/sense`, design tokens, and the type scale. |

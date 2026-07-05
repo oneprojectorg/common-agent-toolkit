@@ -1,6 +1,6 @@
 ---
 name: op-ui-conventions
-description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Use when writing JSX/TSX, picking a color or font size, importing from @op/ui, choosing a variant vs creating a one-off, or editing packages/ui.
+description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Keep @op/ui framework-agnostic (no next/image inside packages/ui — inject it via a render prop) and use semantic heading hierarchy (the hero title is the h1). Use when writing JSX/TSX, picking a color or font size, importing from @op/ui, choosing a variant vs creating a one-off, adding an image preview to a UI primitive, setting heading levels, or editing packages/ui.
 ---
 
 ## Components
@@ -31,6 +31,8 @@ Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@o
 - Do **not** use raw Tailwind sizes (`text-[14px]`, `text-2xl`) unless that exact token is defined.
 - `<Header3>` already includes `text-title-base` and `font-weight: 300`. If you're composing a typography style, check what the heading component already gives you before stacking classes (PR #1039 review pattern).
 - Use the `<Header1>` … `<Header4>` heading components (in `@op/ui`) instead of raw `<h1>` / `<h2>` with handcrafted class lists. If a heading tier doesn't exist yet (`<Header4>`), add it — don't reach for `<h4 className="text-title-sm">` ad-hoc. PR #1262 review: "we can use the `<HeaderX>` components here. If there is no `<Header4>` then one can be added."
+- **Semantic hierarchy: the page's main title is the `h1`.** The primary page title (usually in the hero) is the semantic `<h1>`; a secondary top-header-bar title is an `<h2>`. PR #1482 review: "It's better for page structure if the title that's in the hero is the `<h1>` element."
+- **Escape hatch — raw `<h1>` with custom classes.** The `@op/ui` `Header` components (`<Header1>` / `<GradientHeader>`) hardcode specific `text-title-*` sizes, and `twMerge` won't dedupe those custom tokens — so they can fight a hero's custom responsive gradient sizing. When the fixed sizing fights the design, a raw `<h1>` with custom classes is acceptable and preserves the main-heading semantics (PR #1439).
 
 ## Tailwind sizing — stay on the scale
 
@@ -63,6 +65,13 @@ When the existing component is *close* but not quite right, extend it (add a var
 ## When in doubt
 
 Read `packages/ui/src/<component>` to confirm the API before introducing a new component. The Storybook (`pnpm w:ui dev` at port 3600) is the fastest way to scan available variants.
+
+## Keep `@op/ui` framework-agnostic
+
+`packages/ui` must NOT depend on `next` — never import `next/image` (or any `next/*`) inside a `@op/ui` primitive. When a primitive needs an optimized image, take a render/slot prop and let the **app** inject `next/image`.
+
+- PR #1480: `BannerImageField` added a `renderPreview` prop so the app passes a Next `<Image fill>` while `@op/ui` stays `next`-free — same reason `AvatarUploader` uses a plain `<img>`. Review: "Can this be a NextImage so that we get the benefits of that? or we simply pass in the image which is what we do with the Avatar."
+- Wrinkle: `next/image` can't optimize a transient `blob:` optimistic URL, so the internal fallback renders a plain `<img>` for the blob frame while the stable public URL gets the optimized image.
 
 ## React/Next.js performance
 
