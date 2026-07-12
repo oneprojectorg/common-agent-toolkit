@@ -94,6 +94,8 @@ const isAdmin = checkPermission(
 
 `getOrgAccessUser` / `getProfileAccessUser` are **memoized per-request** (`AsyncLocalStorage`-backed, via `withRequestCache` middleware — PR #1220). Calling them twice in the same procedure hits the DB once. Don't try to outsmart it by passing the fetched user around through every helper — just call again where it's needed.
 
+Beneath that per-request `memoize()` sits a second, **durable** `cache()` layer (`cache({ type: profileUser | orgUser, skipMemCache: true })`): the memoize collapses same-request calls, the durable cache survives across requests. When you add a new access-user loader, mirror `getOrgAccessUser` exactly (durable `cache()` + retained `memoize()`), and — critically — wire cache invalidation into **every** mutation that changes what it caches (roles, membership), e.g. `invalidateProfileUserCacheForRole`. A durable cache with a missed invalidation site serves stale grants; grep the mutation sites before shipping (PR #1339 self-review).
+
 ### 5. Domain-specific assertions for instances and collections
 
 Some features wrap the lower-level assertions into domain-aware ones (and return useful context):
@@ -158,6 +160,12 @@ import { AccessBoundary } from '@/components/AccessBoundary';
 - Source: `apps/app/src/components/AccessBoundary.tsx`.
 
 If you need a boolean in code (to enable/disable a button, etc.), reach for the same `useUser()` context — don't roll your own role check.
+
+**Gate the individual action, not the whole container.** Wrap only the privileged menu items (e.g. Delete / moderation actions) in `<AccessBoundary>` — render the menu itself, and any non-privileged action (e.g. Report), for every viewer. PR #1511: the menu always renders; moderation actions like Delete stay gated to those roles, while Report is shown to everyone. Hiding the entire menu when one action is gated denies non-privileged viewers actions they're allowed to take.
+
+For a component that can render both inside and outside a `UserProvider` (e.g. an avatar shown in the onboarding tree), reach for `useMaybeUser()` — it returns `undefined` when no provider is mounted — instead of `useUser()`, which throws. Absence of a user is a valid state there, not a bug (PR #1519).
+
+When a name/avatar links to a walled-garden route (`/profile/[slug]`, `/org/[slug]`) on a surface reachable by public or non-network-member viewers, gate the link itself with `useCanLinkToProfile` — a viewer who can't reach the target only hits a login/forbidden wall. Compose the flag (`const linked = withLink && canLinkToProfile && Boolean(slug)`) and render plain text when it's false rather than a dead link (PR #1519).
 
 ## Don't
 

@@ -8,6 +8,7 @@ description: Drizzle ORM workflow — edit schema files under services/db/schema
 - Schema: `services/db/schema/` — one file per logical area, re-exported from `index.ts`. Table files use the `.sql.ts` suffix.
 - Drizzle config: `services/db/drizzle.config.ts` (entry: `schema/publicTables.ts`, snake_case casing, `drizzle.migrations` tracking table).
 - Generated migrations: `services/db/migrations/<timestamp>_<slug>/{migration.sql,snapshot.json}` — one directory per migration. Drizzle records applied migrations in the `drizzle.migrations` table on the DB; there's no on-disk journal.
+- Migration order is a high-water mark by folder-name timestamp (there's no `meta/_journal.json`) — any migration timestamped *before* the last-applied one is silently skipped and never runs in deployed envs. If you rebased `dev` or hand-copied a migration under an older prefix, re-generate or rename it so its timestamp is after the last released migration. PR #1510 self-review: a migration older than the last-applied one is silently skipped; it was timestamped after the prior migration so it can't be skipped.
 - Drizzle client: imported via `@op/db/client`. Tables and schema types: `@op/db/schema`.
 
 ## Workflow
@@ -118,6 +119,8 @@ Imperative `db.select().from()` is fine when RBQ genuinely can't express the que
 
 When you do fall back, **leave a one-line comment explaining *why*** so the next reader doesn't reflexively rewrite it as RBQ. Canonical fallback: `packages/common/src/services/decision/resolveBoundary.ts:27-40` (`ST_Contains` over a geography column — RBQ can't express it cleanly).
 
+**Share the predicate between a findMany and its count.** When a list query needs both the page (relational `findMany`) and a total (`count(*)`), don't duplicate the `where` — extract a `buildWhereClause(table)` helper parameterized on the table ref so the same predicate applies to both the aliased relational table and the plain count query. PR #1553 review: `buildWhereClause` is parameterized on the table ref so the same predicate works for both the relational `findMany` (aliased table) and the plain count query.
+
 ### Mutations and transactions are out of scope
 
 `db.insert()` / `db.update()` / `db.delete()` stay imperative — RBQ doesn't replace writes. Transactions wrapping several statements continue to use the same operators on the `tx` handle; the preference here is about the **read** path. RBQ on a `tx` handle (`tx.query.<table>.findFirst(...)`) is fine and matches the example above.
@@ -132,4 +135,5 @@ When you do fall back, **leave a one-line comment explaining *why*** so the next
 - Don't run `pnpm w:db migrate`. The agent should never apply migrations directly — it's a denied command, and applying outside the normal flow risks drift between the migration files and the DB state.
 - Don't hand-edit `migration.sql` or `snapshot.json` after a migration has been committed and shipped — write a new corrective migration instead.
 - Don't delete a migration directory that's already been merged to `dev`/`main`. Other devs and shared envs have applied it; removing it desyncs everyone.
+- A `migrationsCheck` pre-commit guard blocks deleting committed migrations by design — don't reach for `--no-verify` to get around it. The one safe exception is deleting a migration no real database has recorded (generated locally, never applied to `dev`/`main`); anything already shipped desyncs shared envs. PR #1510 self-review: deletion via `--no-verify` was only safe because no database had it recorded.
 - Don't add unrelated schema changes to a feature migration. One concern per migration; reviewers will ask you to split.

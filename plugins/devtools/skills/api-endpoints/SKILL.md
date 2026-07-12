@@ -90,6 +90,7 @@ See `services/api/src/routers/posts/getPosts.ts` and `services/api/src/routers/d
   ```
 - Register the domain router in `services/api/src/routers/index.ts`.
 - When an existing procedure file is getting unwieldy (review feedback: "listProposals is too big — split out a new procedure"), prefer adding a new procedure over piling on flags. Keep the legacy procedure calling the old code path; new code goes in the new procedure.
+- **Before adding a new procedure, check whether an existing one already covers the case** — client-side concepts often collapse to one server-side type, so no backend change is needed. PR #1511 self-review: reporting a comment reused the existing `moderation.flagItem` mutation with `itemType: 'post'` (comments are posts server-side), the same async flow the proposal-header Report action already used — no new endpoint.
 
 ## Input and output schemas
 
@@ -111,6 +112,10 @@ import { collectionSchema, createCollection } from '@op/common';
 //                  ^ schema imported from @op/common, not from encoders
 ```
 
+**Evolve existing input schemas additively.** A new field on an already-shipped input schema should be optional, and its JSDoc/comment must state what an *absent* value means so pre-existing callers and data keep working through a defined fallback. PR #1532: `'x-phase'?: string` — "When absent, the form applies to the process's initial (submission) phase"; `getForProfile` added optional `phaseId` / `initialPhaseId` documented as legacy, phase-agnostic behavior. Don't make a new field required (it breaks old callers) or leave empty-value semantics implicit.
+
+**Mirror a sibling endpoint's filter schema instead of re-listing filters.** When a new endpoint is a sibling of an existing one over the same data (a map alongside a list, an export alongside a table), derive its input from the sibling's filter schema minus the pagination fields (`.omit({ cursor: true, limit: true })`) rather than hand-listing the filters again. PR #1553 self-review: input mirrors `proposalFilterSchema` minus `cursor`/`limit`, so the map applies the same category/status/ballot filters the list does — keeps the two from silently drifting out of filter parity.
+
 ### Output — always an encoder
 
 `.output()` is always an encoder from `services/api/src/encoders/` (or a `z.array(...)` / composition of one). End the handler with `outputSchema.parse(result)` so the response is validated and stripped to the encoder shape.
@@ -129,6 +134,10 @@ export const resourceEncoder = z.object({
 ```
 
 A few encoders intentionally duplicate a `@op/common` schema's shape (e.g. `services/api/src/encoders/resources.ts` has a header comment "do not collapse this into a re-export"). That's a deliberate wire-stability choice — read the comment before flattening.
+
+**Reuse a sibling endpoint's output schema when it renders the same client type.** When a new endpoint renders the same client type as an existing one (e.g. a map view of the same Proposal the list already returns), reuse the existing endpoint's full output schema — leave the heavy fields unset rather than defining a separate leaner client-side shape. PR #1553 self-review: output reuses the full `proposalSchema` (heavy fields simply left unset) so the map renders the same `Proposal` type the list produces — no separate client-side shape to keep in sync.
+
+**List endpoints stay slim — return only the fields consumers actually render, and skip the expensive per-row data (document fetches, relationship counts, vote counts) they don't.** The encoder/schema is the enforcement point: a list encoder should `.omit(...)` or simply not include heavy derived fields so no query can quietly re-add the cost. PR #1563 ("Omit data from listProposals"): "We are returning too much data with the listProposals endpoint. This omits that data." PR #1553 added a slim variant with only the columns pins/hovercards need. When a caller needs a lighter payload, prefer a separate slim procedure/encoder over widening the heavy one.
 
 ### Types come from encoders, never `RouterOutput`
 
