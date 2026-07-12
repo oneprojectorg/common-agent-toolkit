@@ -68,6 +68,7 @@ A `200`/`307` means it's serving; anything else (especially `7`/`connection refu
 - **Migrations apply on docker stack boot** (via the api container) — so after `pnpm w:db generate`, restart the docker stack to pick up new SQL. Don't `pnpm w:db migrate` manually; it's denied (see `drizzle-migrations`).
 - **`pnpm dev` vs `pnpm w:app dev`** — root `pnpm dev` runs `turbo dev` for everything in parallel; the workspace shortcut runs a single app. Prefer the shortcut unless you genuinely need everything.
 - **Stack memory budget** — the full docker stack steady-states at ~6–8 GB RAM (DinD + ~12 Supabase sub-containers + Next.js + API + Redis). Give Docker enough headroom.
+- **Documenting a new env var** — any env var the app or build reads must be added to `.env.local.example` (and any sibling env examples), with a short note on when it applies (e.g. build-time / deploy-only). PR #1521 review: `POSTHOG_API_KEY` / `POSTHOG_ENV_ID` were read but undocumented in every example — add them with a build-time/deploy-only note so nobody has to reverse-engineer them from the code.
 
 ## When the dev server is misbehaving
 

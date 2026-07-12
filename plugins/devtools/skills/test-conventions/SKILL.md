@@ -25,6 +25,10 @@ Decide by what you're testing, not by where it's easiest to write:
 
 If a bug fix has a service-layer cause, the test belongs in Vitest even if the symptom was UI. A Playwright spec is the right call only when the failure mode genuinely needs a browser to reproduce.
 
+**A11y known-violations ledger.** The a11y CI bot (`a11y-known-violations`) diffs each PR's a11y scan against the baseline ledger at `tests/e2e/a11y-baseline/known-violations.json`. Any NEW violation blocks merge until you either fix it or add an explicit entry to that file — the bot comments e.g. `New (3) ⚠️ Either fix or add an entry to tests/e2e/a11y-baseline/known-violations.json`, such as a serious `link-in-text-block` on `/info/columbus-addendum`. Prefer fixing; adding a ledger entry is a deliberate acknowledgement of accepted debt, not a rubber stamp — don't silence the bot by deleting existing entries (PR #1505 / #1521).
+
+**A regression test must reproduce the exact path.** A regression test must fail before the fix and pass after — and for the *exact* reason of the bug. If the obvious test passes both before and after the fix, it isn't exercising the buggy path; engineer the scenario that forces it (PR #1558 self-review: the grid-mode test passed either way, so the regression test used a location-field template to put the sentinel behind the pin query's Suspense boundary and force the late-mount attach). If you can't construct a case that fails on the unpatched code, you haven't proven the fix.
+
 ## Naming `describe` and `it` blocks — read like a sentence
 
 Recurring review pattern: `it()` and `describe()` should read like a sentence describing the assertion, not a snippet of jargon.
@@ -61,6 +65,8 @@ describeAccessTierGating('myEndpoint', {
 - `expectPassesAccessTierGate` asserts the gate **let the caller through** — the call may still fail later (resource not found, deeper authorization), but not at the tier gate.
 
 When you migrate an endpoint down the ladder (e.g. `networkAuthenticatedProcedure` → `authenticatedProcedure`), the gating tests are what prove the deeper authorization still fails closed for out-of-network callers.
+
+**Add a no-leak test, not just a gating matrix.** Gating proves *who gets past the gate*; it does not prove *what a record that passes the gate reveals*. For any endpoint that filters records by visibility, add a positive no-leak test alongside the gating matrix: seed a HIDDEN record with real data (coordinates, a pin, a private field) and assert a non-admin caller who IS admitted still sees nothing derived from it (PR #1553 review: "a HIDDEN proposal that has coordinates must not leak a pin to a non-admin member … this is the coverage that guards the no-leak invariant"). Valid-but-hidden data is the case that catches a filter that only checks existence, not visibility.
 
 ## The E2E env shim
 

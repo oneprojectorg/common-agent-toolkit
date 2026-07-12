@@ -84,6 +84,8 @@ Add a new channel only when:
 
 Don't add a channel that no query subscribes to. **The mutation side exists for the query side.** Adding a channel "just in case" leaves the codebase carrying noise that pretends to be load-bearing.
 
+**Prefer reusing a sibling's channel over adding one.** If a new query is a derived view of the same data a sibling endpoint already lists, register that sibling's existing channel rather than a new one — the query then refreshes on the same invalidations the list already listens to, and no manual invalidation is needed (PR #1553 review: a `pins` query registered the same `decisionProposals` channel as `listProposals`, so pins refresh whenever proposals do). Only reach for a new channel when the reused one would be too coarse.
+
 ## When NOT to over-channel a mutation
 
 A recurring review pattern (PR #1229): mutations that register every plausibly-affected channel become invalidation bombs. Register the channels the affected queries **actually** subscribe to, not every channel related to the resource.
@@ -142,6 +144,14 @@ Two things to notice:
 PR #1392 (`perf(decisions): cache instance and categories in Redis`) called this out on the `transitionMonitor` path: "Noting the synchronous invalidation which is important for realtime channel invalidations." That endpoint flips state *and* registers channels in the same synchronous flow — splitting the registration into a follow-up event would have broken the invalidation. Same applies to any code that's tempted to register channels from a setTimeout, a Promise without `await`, or a queued background job.
 
 If a mutation genuinely runs work asynchronously (e.g. enqueues a job that completes minutes later), the synchronous part still registers the channels for the queued work's expected side-effects so the UI knows what to invalidate when the realtime broadcast eventually arrives.
+
+## Bound the mutation-id dedup cache
+
+`QueryInvalidationSubscriber` tracks already-processed mutation ids to skip duplicate broadcasts, but that structure only ever grows — a plain `Set` is an unbounded memory leak over a long-lived session. Use an insertion-ordered `Map` capped at a fixed size with FIFO eviction (evict the oldest key once the cap is hit), sized to comfortably cover the race window it protects — 500 entries in practice (PR #1336). Same shape applies to any long-lived client-side dedup/seen-set.
+
+## Reference-count client subscriptions — tear down on the last query out
+
+Channel registration on the client is not one-directional. The `queryChannelRegistry` (in the `QueryInvalidationSubscriber` layer) must keep a `queryKeyToChannels` inverted index alongside its channel → query-keys map, expose `unregisterQuery`, and forward TanStack `QueryCache` `removed` events into it. When a channel's last subscribing query leaves, close its Supabase Realtime subscription. A registry that only tracks channel → query-keys and never decrements leaks: every channel a query ever touched stays subscribed until the tab closes, and at thousands of concurrent users this saturates Supabase Realtime's per-project channel cap (PR #1336 self-review). Never let channels or subscriptions accumulate for the tab lifetime.
 
 ## Channel registration on procedures
 

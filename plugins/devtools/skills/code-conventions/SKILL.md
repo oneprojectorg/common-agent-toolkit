@@ -116,6 +116,8 @@ Exception: truly-generic primitives in `@op/ui` / `@op/sense` (`<Card>`, `<Butto
 
 Recurring review on JSON: "I feel like this `Record<string, unknown>` is really seeping into our code a lot and I don't think it's necessary that it's unknown. The JSON type in the database wasn't meant to be untyped as much as it is meant to simply not be typed at the database level."
 
+- **Fix the *source* type, not each consumer.** When a hook returns a ref, type it as `RefCallback<T>` (or the exact `RefObject<T>`) so call sites put the ref straight on the element — delete the `as React.RefObject<HTMLDivElement>` casts rather than papering over ref typing at every use site. PR #1558 self-review: the hook now returns a properly typed `RefCallback<T>`, so every `as React.RefObject<HTMLDivElement>` cast at the call sites is deleted and the ref goes straight onto the element.
+
 ### Cast at the boundary, not at the consumer
 
 Cast as **close to the DB query as possible** — a single cast point where untyped data enters the typed system. Then downstream code is strictly typed.
@@ -133,6 +135,14 @@ When the inferred Drizzle type isn't precise enough, narrow it once with a Zod s
 ### API types from `@op/api/encoders`, never `RouterOutput`
 
 Already covered in `api-endpoints` and `component-file-structure` skills. Re-stating because it's recurrent: `RouterOutput['x']['y']` couples callers to the router shape; encoder `z.infer` types are the source of truth.
+
+## URL host checks — compare the exact host, never a substring
+
+Never authorize or route an external request by checking whether a token appears *inside* a URL (`url.includes('openl-translate.p.rapidapi.com')`). Arbitrary hosts can sit before or after the token (`evil.com/?x=openl-translate.p.rapidapi.com`, `openl-translate.p.rapidapi.com.evil.com`), so the substring passes but the request goes somewhere unintended. CodeQL flags this as "Incomplete URL substring sanitization" and it will block the merge. Pin the host as a constant and compare it exactly — parse with `new URL(x)` and check `url.hostname === EXPECTED_HOST`. PR #1523 review (CodeQL): "'openl-translate.p.rapidapi.com' can be anywhere in the URL, and arbitrary hosts may come before or after it."
+
+## Fix the encoding, not the symptom
+
+When an input can be misinterpreted, make the representation unambiguous at the source rather than adding a guard that patches the bad case downstream. PR #1540 self-review: array elements were re-keyed `field[index]` instead of `field:index` so a numeric-string id can never be parsed as an array index — "make the encoding unambiguous instead of guarding the symptom." A guard leaves the ambiguity live for the next caller; an unambiguous encoding removes the failure class.
 
 ## Function parameter shape
 
@@ -205,3 +215,4 @@ Use `Explore` or `Grep` for two minutes before writing 30 lines.
 - **Don't add comments that just restate the code.** Comments answer "why" questions, not "what" — the code says what it does.
 - **Don't leave `// TODO: this is temporary` without an Asana follow-up.** Follow-ups land in the task tracker, not in TODOs.
 - **Don't pile flags onto a function.** When a function grows `includeDrafts?: boolean` plus `forAdmin?: boolean` plus `withReviews?: boolean`, compose call sites instead. PR #1084 review: "I like the composable approach more here because the choice is pretty specific to the use-case... not a big fan of the flags approach generally."
+- **Don't leave code the refactor orphaned.** When a component or asset stops being used after your change, delete it — don't leave it in the tree. PR #1517 self-review: the FullScreenSplit* components and the SideImage asset were only used by the old layout, so they're deleted.

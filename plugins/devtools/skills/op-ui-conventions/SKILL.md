@@ -24,6 +24,7 @@ Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@o
 - **Never** use arbitrary hex values like `bg-[#333]` or `text-[#abc]`.
 - Token source of truth: `packages/styles/tokens.css` (`--op-*` CSS vars), mapped in `packages/styles/shared-styles.css`.
 - The shadcn-derived `--color-background` / `--color-foreground` vars are now defined too (PR #1223). `bg-background` is a valid class — but prefer the named-token classes when you mean a specific brand color.
+- **Links in prose must be underlined, not color-only.** A link inside a text block styled only with `text-primary-teal` fails the axe `link-in-text-block` rule when color contrast alone is insufficient — add an underline so it stays distinguishable from surrounding text. PR #1524: "links in prose need some contrast with the surrounding text to be recognizable, especially when there isn't a ton of color contrast."
 
 ## Type scale
 
@@ -33,6 +34,7 @@ Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@o
 - Use the `<Header1>` … `<Header4>` heading components (in `@op/ui`) instead of raw `<h1>` / `<h2>` with handcrafted class lists. If a heading tier doesn't exist yet (`<Header4>`), add it — don't reach for `<h4 className="text-title-sm">` ad-hoc. PR #1262 review: "we can use the `<HeaderX>` components here. If there is no `<Header4>` then one can be added."
 - **Semantic hierarchy: the page's main title is the `h1`.** The primary page title (usually in the hero) is the semantic `<h1>`; a secondary top-header-bar title is an `<h2>`. PR #1482 review: "It's better for page structure if the title that's in the hero is the `<h1>` element."
 - **Escape hatch — raw `<h1>` with custom classes.** The `@op/ui` `Header` components (`<Header1>` / `<GradientHeader>`) hardcode specific `text-title-*` sizes, and `twMerge` won't dedupe those custom tokens — so they can fight a hero's custom responsive gradient sizing. When the fixed sizing fights the design, a raw `<h1>` with custom classes is acceptable and preserves the main-heading semantics (PR #1439).
+- **twMerge misreads custom `text-title-*` sizes as text-color classes.** Because a custom size token like `text-title-lg` starts with `text-`, `twMerge` classifies it as a *color* utility and strips a base `text-neutral-black` (or other shared color) merged from the same className — the element then falls back to the inherited color. Don't share a base color class across elements that also set a custom size token; set the intended color explicitly on each (PR #1543 review).
 
 ## Tailwind sizing — stay on the scale
 
@@ -56,6 +58,12 @@ Most "I need a small X" components already exist. The recurring review-rejection
 PR #1262 review: "We can use our `<Skeleton>` component here." PR #1287: "Can we use the standard RichTextEditor for this that has Tiptap and the Common styles builtin already?" PR #1360: extracted `StatusScreen` so `PageError` and `ForbiddenScreen` couldn't drift.
 
 When the existing component is *close* but not quite right, extend it (add a variant or a prop) instead of forking a new one — the second-use threshold from the variant section above applies to whole components too.
+
+When you must open an external link programmatically, always pass the features string: `window.open(url, '_blank', 'noopener,noreferrer')` — the missing opener reference prevents reverse-tabnabbing. PR #1522: `SupportLink` opens with `window.open(SUPPORT_URL, '_blank', 'noopener,noreferrer')`.
+
+## Menu already brings its own Popover
+
+`@op/ui` `<Menu>` renders its own `Popover` — do NOT wrap it in a second `Popover`. Make the trigger element (e.g. a picker) the direct target of `<MenuTrigger>` and forward `placement` to the `Menu` so a single popover is used, following the existing `OptionMenu` pattern (PR #1544 self-review: renders the picker as the direct target of MenuTrigger and forwards placement to the Menu, so a single popover is used — exactly the pattern OptionMenu already uses).
 
 ## Variants and design parity
 

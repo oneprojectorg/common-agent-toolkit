@@ -145,6 +145,8 @@ const [existing, { collectionIds }] = await Promise.all([
 
 Don't `await` sequentially when calls are independent. Reviewers will flag this. PR #1320: "Looks like it can all be run in `Promise.all`?" / "Better move into `submitUserFlag` so that we can run in a `Promise.all`."
 
+**Respect each external provider's own per-request limits — don't `Promise.all` the whole list.** When a third-party API caps items per request, split into chunks under that provider's cap and process them with bounded concurrency via `pMap` (it preserves input order, so results reassemble 1:1 by index). Express both the cap and the concurrency as named constants in `constants.ts` documenting the provider — never inline magic numbers. Each provider is independent: OpenL caps texts per request (`OPENL_MAX_TEXTS_PER_REQUEST`, PR #1523); DeepL rejects any request carrying more than 50 text params, so translate one text per request under a bounded `DEEPL_REQUEST_CONCURRENCY` (PR #1533) — don't reuse a batching strategy that happened to work for a different provider.
+
 ## Don't re-fetch what the caller already has
 
 When the caller (router, parent service, or `<feature>Auth.ts` assertion) has already fetched the row you need, **take it as a parameter** instead of querying again. PR #1320 review: "We fetched this already upstream."
@@ -166,6 +168,8 @@ export const flagItem = async ({ user, itemId }) => {
 
 This is why `<feature>Auth.ts` assertions return resolved context (see the `<feature>Auth.ts` pattern above) — so the service doesn't re-query. If you find yourself fetching the same row in both the assert and the operation, fold the assert to return it.
 
+**Short-circuit an always-empty query.** When a scope resolver can determine the result set will be empty before the main query runs (e.g. a phase that hasn't been reached, an unresolved parent), have the helper return an `isEmpty: true` flag and short-circuit — skip issuing the main query entirely instead of running one guaranteed to return nothing. PR #1437.
+
 ## Query style — prefer RBQ v2 (`db.query`) over `db.select`
 
 For reads, default to `db.query.<table>.findFirst / findMany` with object-form filters and explicit column projection — every service file under `@op/common` should follow this:
@@ -185,6 +189,8 @@ The rules in short — the `drizzle-migrations` skill has the full version with 
 4. **Project columns explicitly with `columns: { foo: true }`** when only one or two fields are needed, instead of pulling the whole row and discarding most of it.
 
 Writes (`db.insert` / `db.update` / `db.delete`) stay imperative — RBQ v2 doesn't replace them, and transactions wrapping several statements continue to use those operators on the `tx` handle.
+
+**Push membership into a subquery — don't materialize an ID set in JS.** When a filter scopes rows to a set (phase / snapshot membership), fold it into an inline `inArray(t.id, db.select({ id: other.fkId }).from(other).where(...))` subquery against an indexed column rather than an extra round-trip that builds a JS array and splats it into `WHERE id IN ($7...$506)`. Extract the predicate into a shared builder and flow the same predicate into the parallel `count(*)` query so neither side re-materializes the set. PR #1437 review.
 
 ## Cursor pagination — tie-breaker on id, null-safe `cursorValue`
 
@@ -236,6 +242,8 @@ The same rule extends to any "is there a next page" check: gate on `lastItem` (n
 | `storage.ts` | Object-storage operations (Supabase storage, S3, etc.). | `deleteResourceObject` |
 
 When a new helper doesn't fit any of these, **prefer adding it to `utils.ts` or extracting a new named file**. Don't put it in the operation file.
+
+**Custom JSONSchema keywords are two-sided — register or break.** When you add an `x-<name>` keyword to a custom-form definition schema (`customForm.ts`), you MUST also register it on the AJV instance in `schemaValidator.ts` (`this.ajv.addKeyword('x-<name>')`, alongside `x-field-order` / `x-format` / `x-map-default`). AJV rejects any unregistered custom keyword, so a schema-only change makes validation fail at runtime. PR #1532 added `x-phase` on both sides for exactly this reason.
 
 ### The `<feature>Auth.ts` pattern
 
@@ -296,9 +304,12 @@ When a mutation affects many profiles (e.g. a resource attached to a shared coll
 
 ## Don't
 
+**Changing a content-key / cache-key format is a silent cache bust.** Any value keyed by a derived content-key (memoized translations, computed-DTO caches, hash-addressed rows) is orphaned the moment you change how that key is built — old entries no longer match, so the next access recomputes from scratch. When a PR alters a key format, spell out in the description exactly which entries re-derive and which are untouched. PR #1540 (self-review): the change altered the content-key format for array fields only, so array translations (e.g. category) re-translate once after deploy while scalar keys are unchanged. Scope it tightly and say so — reviewers can't see the blast radius from the diff alone.
+
 - **Don't add I/O to `utils.ts`** — utils are pure. Side-effect helpers belong in `<feature>Auth.ts`, `channelScope.ts`, or their own file.
 - **Don't expose `db` from a service file** — the service operates on `db`; consumers call the operation. A router never calls `db` directly.
 - **Don't inline auth-check + fetch logic** when a `<feature>Auth.ts` would consolidate the pattern. The third inline copy is a merge-blocker.
 - **Don't add a flag parameter** to an operation when the use cases are genuinely different. Split into two operations. PR #1084 review: "I like the composable approach more here because the choice is pretty specific to the use-case... not a big fan of the flags approach generally."
 - **Don't store more than the id** when you only need the id. A draft cache that stores the entire proposal will drift; one that stores the id stays correct.
 - **Don't open-code the lock**. Use the feature's `lockX` helper from `ordering.ts`.
+- **Don't re-implement the visibility filter per read endpoint.** When two reads (e.g. a paginated `listX` and a map/aggregate endpoint) must apply the same access / phase / visibility / moderation filtering, extract the WHERE-clause filter builder into one shared helper both call. If each endpoint hand-rolls its own predicate, what a viewer may see drifts between them and one surface leaks rows the other hides. PR #1553 review: the whole access/phase/visibility/moderation filter builder was lifted out of `listProposals` into a shared helper that both the paginated list and the new map endpoint call.

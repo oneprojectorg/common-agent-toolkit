@@ -30,6 +30,7 @@ The primary export should never be buried at the bottom under utilities.
 - **Always prefer Suspense queries** (`useSuspenseQuery`, `useSuspenseQueries`) over `useQuery` + `useEffect` patterns.
 - **Reach for react-query (`useSuspenseQuery` / `useQuery`) over raw `fetch` + `try`/`catch`.** Raw fetches in a component duplicate everything react-query already gives you — caching, dedup, retries, error state. PR #1262 review: "We should lean into useSuspenseQuery and useQuery instead of fetch. This bakes in react-query so we get all the benefits of caching. We can avoid the try/catch there as a result."
 - Wrap suspense queries with a proper `<ErrorBoundary>` — never let a thrown promise escape into a parent that doesn't handle it.
+- **Scope the boundary to the toggled/optional region, not the whole subtree.** When a sub-query only fires in one mode (a map view, an expanded panel, a tab), wrap *that* subtree in its own local `<Suspense>` + `<APIErrorBoundary>`. The local `<Suspense>` keeps toggling into the mode from suspending or blanking the surrounding list; the local error boundary makes a fetch failure degrade only that region instead of bubbling to the page-level error fallback (PR #1553 self-review).
 - **Name suspending components with a `Suspense` suffix.** If a component calls `useSuspenseQuery` or `useSuspenseQueries`, name it `MyComponentSuspense` (e.g. `OrganizationSearchScreenSuspense`, `DecisionOverviewSuspense`). The name signals to every caller that the component suspends and must be rendered under a `<Suspense>` / `<ErrorBoundary>` boundary — there's no other way to tell from the call site. Review feedback (#1248): "It's really nice to keep the standard of `DecisionOverviewSuspense` so it's visible to see that this component will suspend."
 
 ### Single-fetch RSC: server fetch seeds the client query cache
@@ -70,6 +71,8 @@ In server components (RSC) and async loaders, surface failures — don't `.catch
 - **Let it throw** and rely on the nearest `error.tsx` (or a wrapping `<ErrorBoundary>`) to render the fallback. PR #1417 review: "Let's use try/catch here." PR #1341: "I don't think we should swallow errors here."
 
 The anti-pattern is `await fetchX().catch(() => undefined)` followed by silently rendering nothing — users can't tell whether the section is empty or broken, and the error never reaches the error reporter.
+
+**Resource errors → navigation interrupts, not a 500.** When a page fetch fails because the resource is missing or the caller lacks access, map it onto the matching Next.js navigation interrupt instead of letting it bubble as a 500. Client subtrees: wrap the suspense query in `ResourceErrorBoundary` (over `APIErrorBoundary`), which maps 400/404 → `notFound()` and 403 → `forbidden()`. Server components / RSC loaders: pass the caught error to `handleServerError(error)`, which inspects `error.cause instanceof CommonError` (tRPC's server caller re-throws with the original CommonError as `error.cause`) and calls `notFound()` for 404, `forbidden()` for 401/403, else rethrows. A helper like this that always ends control flow (rethrows or triggers an interrupt) should be typed `: never` so the caller's type-checker knows nothing runs after it — `export function handleServerError(error: unknown): never`. PR #1526.
 
 ### URL-driven UI state uses `nuqs`
 
@@ -117,6 +120,10 @@ const onSuccess = ({ proposalId }: { proposalId: string }) => {
 
 This applies most directly to navigation, suspense-triggering state changes, and large list re-keys. `isPending` is also a clean source for a "we're working on it" indicator that doesn't lie about which step is slow.
 
+### Observing a DOM node — callback ref into state, not `ref.current` in an effect
+
+To attach an observer (Resize/Intersection/Mutation) or react to a DOM node's lifecycle, hold the node in state via a callback ref — `const [node, setNode] = useState<HTMLElement | null>(null)` passed as `ref={setNode}` — and depend on `node` in the effect. Don't read `ref.current` inside an effect: a `useRef` mutation doesn't re-run the effect, so it silently misses late mounts and never detaches on unmount. Keep the setter identity-stable (the bare `setNode`) so React only invokes the callback ref when the element actually mounts/unmounts, not on every render. PR #1558 self-review.
+
 ### Cache invalidation — realtime channels, never manual
 
 - **Never manually invalidate queries** in a component after a mutation — no `queryClient.invalidateQueries(...)`, no `utils.x.y.invalidate()`, no `refetch()` to "make it fresh."
@@ -152,6 +159,7 @@ This is the single most common review-rejection theme in the codebase. When you 
 - Prefer **composition via `children`** to slot props with logic branches. If a component's API is starting to grow `slot1` / `slot2` / `headerNode` / `footerNode` props, the right move is usually to flip the composition: let the parent pass children, and have the wrapper component just compose layout.
 - When a file is getting "thick" (`ProposalsList.tsx` is the running gag), don't add another conditional branch — split out a sibling component. Reviewers will still merge a fat file with a note ("this file needs a refactor"), but new feature work shouldn't pile on.
 - The third copy is the merge-blocker. The first occurrence is fine. The second is a flag. The third gets the PR sent back.
+- **Static prose pages follow the existing Content + page + Modal shape.** When adding a public info page, factor the copy into a shared `XContent` component and surface it in both the full `/info/<slug>` page and an `XModal` — mirror the established ToS/Privacy pair (`CoCContent` → `CoCModal` + `/info/tos`), don't duplicate markup between page and modal. PR #1505.
 
 ## Prop design
 
@@ -173,6 +181,7 @@ When a prop is truly optional, prefer `prop?: T` (which resolves to `T | undefin
 
 - **Don't gate a loading skeleton (or above-the-fold layout) on a client-only library.** It should paint on first byte, not wait for client JS to load and hydrate. PR #1455 review on a masonry skeleton: "Do we really need to do the masonry here? Let's just use CSS grid for this so we can SSR it" and "Let's fix the Skeleton as we want that to appear as soon as possible rather than after we have loaded the masonry library on the client."
 - **Approximate the layout with pure CSS.** For a masonry placeholder, CSS columns get you close enough without the client lib: `columns-1 md:columns-2 lg:columns-3 gap-6` on the container, with `mb-6 break-inside-avoid` on each child. Swap in the real client-only layout only once the data has loaded.
+- **Mirror the real component's exact layout, not just its rough shape.** The skeleton and the resolved component must share the same sticky/border/height/grid classes and confine scroll to the same row, so the real component swaps in with no layout shift, gutter shift, or scroll-position reset (PR #1518: the `loading.tsx` shell mirrors the layout grid — `h-dvh` with scroll confined to the content row — and `DecisionHeaderBarSkeleton` mirrors the header's fixed-height sticky bar: same sticky/border/height classes). Give each tab its own `loading.tsx` so the skeleton matches that tab's layout, not a generic one.
 
 ## Performance
 
