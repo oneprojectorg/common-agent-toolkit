@@ -3,7 +3,7 @@ name: file-uploads
 description: How to upload files/images to Supabase storage via the signed-URL flow — the sign->PUT->record three-step, server-side trust boundaries for MIME/size/path, the shared upload constants in @op/common `utils/storage.ts`, and the `@op/common/client` import boundary for client components. Use when adding or reviewing any file or image upload — proposal attachments, resource documents, hero/banner images, avatars — or touching upload constants, signed URLs, or storage paths.
 ---
 
-Uploads go through Supabase storage with a **signed-URL** flow. This replaced base64-through-tRPC, which hit `413 Payload Too Large` against the 3MB Vercel body cap once files got real. The pattern recurred across PR #1420 (proposal attachments) and PR #1480 (decision overview hero image); ONE-325 tracks migrating the remaining upload endpoints onto it. Every upload — attachments, documents, hero/banner images, avatars — uses the same three steps and the same shared constants.
+Uploads go through Supabase storage with a **signed-URL** flow. This replaced base64-through-tRPC, which hit `413 Payload Too Large` against the ~4.5MB Vercel body cap once files got real. The pattern recurred across PR #1420 (proposal attachments), PR #1480 (decision overview hero image), and PR #1612 (profile avatar/banner) — ONE-325 tracks migrating any remaining upload endpoints onto it. Every upload — attachments, documents, hero/banner images, avatars — uses the same three steps and the same shared constants.
 
 ## The three-step signed-URL flow
 
@@ -14,6 +14,8 @@ Never send file bytes through the tRPC body. Three round-trips:
 3. **Record.** Client calls a small `record*` mutation with just the `storagePath` (plus any metadata like a display name). Tiny JSON RPC, no base64.
 
 On failure of **any** step, refetch the owning query to clear the optimistic row — don't leave a phantom attachment in the UI.
+
+**Never persist a transient base64 `data:` preview URL to browser storage.** The instant image preview a picker shows before upload is a base64 `data:` URL — large, and useless once the real upload lands. If a persisted form store writes whole slices to `sessionStorage`, those blobs blow the quota (`QuotaExceededError`). Strip them in the store's `partialize` / persist sanitizer (match `/^data:[^,]*;base64,/`) so only the small `https://` upload URLs survive a refresh. Anchor the regex narrowly so a legit free-text field that merely starts with `data:` isn't dropped. PR #1608.
 
 ```ts
 // client — inside a use client component
@@ -29,6 +31,7 @@ Client-side checks (extension filter, size preview, MIME sniff) are **UX only**.
 - **MIME — read the STORED type, not the declared one.** Read the `Content-Type` Supabase recorded on the actual PUT (`storedMimeType` from the object metadata), **not** `input.mimeType`. A caller can `PUT` `text/html` while declaring `image/png`, and Supabase serves back what it received. Re-check `storedMimeType` against the shared allowlist. PR #1420 review flagged this as **the most important line in the file** — deliberately do NOT trust the client-declared MIME.
 - **Size — enforce against the stored object.** The signed PUT URL has **no inherent size cap**. On record, read the actual stored object size and reject against the cap **before** inserting the attachment row, so you never leave a row pointing at an oversized blob.
 - **Anti-hijack path-prefix check.** The signed URL is path-scoped, but the client hands the path back on record. Re-check that `storagePath.startsWith(<caller's own prefix>)` — otherwise a caller could submit someone else's just-uploaded object. PR #1420.
+- **Narrow further than the shared allowlist when the endpoint is stricter.** The shared `ALLOWED_UPLOAD_MIME_TYPES` also permits PDFs / office docs; an image-only endpoint must additionally reject anything that isn't an image after the allowlist check. PR #1612 `saveProfileImage`: "The shared allowlist also permits PDFs / office docs; profile images are image-only, so reject anything that isn't an image." (And re-assert access on the `record`/`save` step — an image a personal-profile owner uploads needs the non-throwing access path; see the `access-control` skill on personal-profile owners.)
 
 ```ts
 // record*.ts — service side

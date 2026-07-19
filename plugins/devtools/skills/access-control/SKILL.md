@@ -118,6 +118,14 @@ When you need the same (fetch + assert + return useful ids) shape in a new domai
 
 For read endpoints, prefer `permission.READ` over `permission.ADMIN` even for admin-only views — admins inherit READ, and a future role refactor might expose a non-admin role that can read but not write. PR #1208: "I like this being `permission.READ`" — gives room for non-admin readers later without changing the gate.
 
+### 7. Personal-profile owners have no role row — don't gate them with the throwing assert
+
+A user's ownership of their **personal** profile is just the `users.profileId` pointer — there is **no role row** on that profile. So the throwing `assertProfileAccess` (and anything built on it) `403`s the owner of their own personal profile, because it finds no roles to check. For an action a personal-profile owner must be able to perform on their own profile (e.g. avatar / banner upload), use the non-throwing primitive `getProfileAccessRoles` plus an explicit own-profile check (`user.profileId === profileId`), then `checkPermission` — don't reach for the throwing assert. PR #1612 (nourmalaeb): "personal-profile owners have no role row on their own profile … so every personal upload would 403. Used `getProfileAccessRoles` (the non-throwing primitive it wraps) … then `checkPermission` after the own-profile check." This is also why `assertProfileAccess` itself can't go inside a `Promise.all` where a personal-profile owner is a valid caller.
+
+## One mutation, two permission tiers → two endpoints
+
+When a single mutation serves two use cases that need *different* permission tiers, add a dedicated endpoint for the looser case instead of loosening the shared endpoint's tier (which silently exposes the stricter case too). PR #1580: opening `profile.addRelationship` down a tier to allow proposal likes/follows also let anyone create org↔individual relationships — the fix reverted `profile.addRelationship` to `networkAuthenticated` and added a separate `decision.addProposalRelationship` on the confirmed tier. Corollary: **gate a lighter engagement action at the same bar as its heavier sibling on the same resource, never stricter** — likes/follows shouldn't be held to a higher permission than commenting (PR #1580: the like guard was narrowed to match the comment path's `SUBMIT_PROPOSALS` on the decision).
+
 ## Be conservative when broadening user / profile reads
 
 Adding a field to the `user` / `profile` encoder, or to a "list users" service, is a place where auth-sensitive data leaks if it's not deliberate. Email, phone, `is_anonymous`, role lists, and similar fields are the recurring offenders. PR #1297 review: "One reason for previously not adding this in prior is that it makes it way too easy to leak details related to auth to other users (including things that might be auth only like phone number). Any reason it was added here?"
@@ -162,6 +170,8 @@ import { AccessBoundary } from '@/components/AccessBoundary';
 If you need a boolean in code (to enable/disable a button, etc.), reach for the same `useUser()` context — don't roll your own role check.
 
 **Gate the individual action, not the whole container.** Wrap only the privileged menu items (e.g. Delete / moderation actions) in `<AccessBoundary>` — render the menu itself, and any non-privileged action (e.g. Report), for every viewer. PR #1511: the menu always renders; moderation actions like Delete stay gated to those roles, while Report is shown to everyone. Hiding the entire menu when one action is gated denies non-privileged viewers actions they're allowed to take.
+
+**Gate an owner-or-admin action on the owner-or-admin flag, not on admin alone.** When the server already authorizes an action for the resource's owner (e.g. `deleteProposal` lets the submitter delete), the UI gate must be `canManage || isEditable` — not `canManage` (admin) by itself. A non-admin owner — including anonymous / non-network users, who are *never* admins — otherwise never sees a menu the server would happily serve them. PR #1568: the proposal menu in `ViewProposalsList` was gated on admin alone while the sibling `VotingProposalsList` correctly used `canManageProposals || proposal.isEditable`; owners lost the menu until the two were aligned. When two sibling lists render the same action menu, keep their gating conditions identical so one can't silently diverge.
 
 For a component that can render both inside and outside a `UserProvider` (e.g. an avatar shown in the onboarding tree), reach for `useMaybeUser()` — it returns `undefined` when no provider is mounted — instead of `useUser()`, which throws. Absence of a user is a valid state there, not a bug (PR #1519).
 

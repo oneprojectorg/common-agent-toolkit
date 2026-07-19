@@ -26,7 +26,7 @@ Business logic does **not** live here. It lives in `@op/common` services (`packa
 | `authenticatedProcedure()` | Any user, **including anonymous Supabase sessions**. No network gating; auth is deferred to the service. | Endpoint mutates on behalf of a logged-in user (anonymous or not). Pair with explicit service-layer assertions. |
 | `openProcedure()` | No JWT required. Resolves `ctx.user` *if present*, otherwise leaves it `undefined`. | Public reads of public-by-design resources (e.g. public decisions). Service must `resolveAccessUserIds` and gate every fetch. |
 
-Pass `{ rateLimit: { windowSize, maxRequests } }` to override the 10 req / 10 s default. The factories already compose `withRequestCache` → `withChannelMeta` → `withLogger` → `withRateLimited` → (tier middleware) → `withAnalytics`.
+Pass `{ rateLimit: { windowSize, maxRequests } }` to override the 10 req / 10 s default — but only with a specific reason. Reviewers push back on custom rate limits added by reflex; rely on the factory default unless the endpoint genuinely needs a different budget. PR #1580: "We don't need a custom rate limit here, I think. We can just use the default one." The factories already compose `withRequestCache` → `withChannelMeta` → `withLogger` → `withRateLimited` → (tier middleware) → `withAnalytics`.
 
 Never hand-roll `t.procedure` — go through a factory so middleware ordering stays consistent.
 
@@ -120,6 +120,8 @@ import { collectionSchema, createCollection } from '@op/common';
 
 `.output()` is always an encoder from `services/api/src/encoders/` (or a `z.array(...)` / composition of one). End the handler with `outputSchema.parse(result)` so the response is validated and stripped to the encoder shape.
 
+**When you add a field to an output shape, update every encoder the result flows through — the strip is silent.** tRPC's output `parse` drops any field the encoder doesn't list, so a service that now returns `previewText` renders blank on the client if the encoder still lists only `documentContent`. There's no error — the field just vanishes over the wire. After changing an output shape, trace every encoder that reads through it and add a regression test asserting the new field survives. PR #1551: "This encoder only listed `documentContent`, so tRPC output parsing was silently stripping the preview and every results-page card would have rendered blank."
+
 **Build encoders with `createSelectSchema`** from drizzle-zod, then `.extend(...)` for computed/joined fields. The Drizzle schema is the source of truth for the row shape; an encoder that handwrites every field will drift the first time someone adds a column.
 
 ```ts
@@ -138,6 +140,12 @@ A few encoders intentionally duplicate a `@op/common` schema's shape (e.g. `serv
 **Reuse a sibling endpoint's output schema when it renders the same client type.** When a new endpoint renders the same client type as an existing one (e.g. a map view of the same Proposal the list already returns), reuse the existing endpoint's full output schema — leave the heavy fields unset rather than defining a separate leaner client-side shape. PR #1553 self-review: output reuses the full `proposalSchema` (heavy fields simply left unset) so the map renders the same `Proposal` type the list produces — no separate client-side shape to keep in sync.
 
 **List endpoints stay slim — return only the fields consumers actually render, and skip the expensive per-row data (document fetches, relationship counts, vote counts) they don't.** The encoder/schema is the enforcement point: a list encoder should `.omit(...)` or simply not include heavy derived fields so no query can quietly re-add the cost. PR #1563 ("Omit data from listProposals"): "We are returning too much data with the listProposals endpoint. This omits that data." PR #1553 added a slim variant with only the columns pins/hovercards need. When a caller needs a lighter payload, prefer a separate slim procedure/encoder over widening the heavy one.
+
+For a list card that needs *some* of the heavy content, compute a **lightweight server-side preview** (e.g. `buildProposalListPreview` → `previewText`) and drop the full field from list rows entirely, keeping it only on the single-item read. PR #1551: "list rows no longer need to ship fragments at all"; `documentContent` is omitted on list rows, still present on the single-proposal read.
+
+**Narrow relation / lateral-join column selects to exactly the fields the encoder encodes.** A `with: { … }` relation or a `LEFT JOIN LATERAL json_agg` that select-alls will drag heavyweight unencoded columns (a generated `tsvector` search column, large blobs) into both the query and the payload. Constrain the relation's `columns` to the encoder's shape. PR #1551: `proposalProfileColumns` narrows the `submittedBy`/profile relation selects to just the columns `proposalProfileSchema` encodes — dropping the generated search `tsvector` from the lateral joins and the payload.
+
+**Keep a privileged list option out of the public input schema.** When a list endpoint has an internal-only flag (e.g. `includeDocumentContent` that returns full content), *omit it from the `.input()` Zod schema* rather than adding it as an optional field — Zod strips unknown keys, so an external tRPC client can't set it, while internal server callers pass it directly to the service. PR #1551: `includeDocumentContent` is absent from `proposalFilterSchema`, so a client can't pull full documents on the list endpoint.
 
 ### Types come from encoders, never `RouterOutput`
 
@@ -178,6 +186,8 @@ Invalidation is push-based. The client (`apps/app/src/components/QueryInvalidati
 A query and the mutations that change its data must register the **same** channel, or the UI won't refresh. If data isn't updating after a mutation, the fix is a missing/mismatched channel — **never** a manual `queryClient.invalidateQueries(...)` / `utils.x.invalidate()` on the client.
 
 **Don't over-register on mutations either.** Reviewers will push back on excessive channel lists ("a delete doesn't need `Channels.collectionResources(id)` if nothing reads it"). Register the channels the affected queries actually subscribe to, not every channel the mutation could plausibly affect.
+
+**`await` a server-side cache purge inside the mutation — never fire-and-forget it.** This is separate from realtime channels: when a mutation invalidates a *server-side* durable cache (e.g. the `getMyAccount` user cache), the client fires its own query invalidation the moment the mutation resolves, so a fire-and-forget server purge races that refetch and re-serves the stale value. `await` the purge before the handler returns. PR #1556: "the `await` matters … fire-and-forget would re-serve the stale cached user. Matches the awaited pattern in `completeOnboarding` and `switchProfile`."
 
 ## Drizzle queries: prefer relational (RBQ v2) over imperative
 

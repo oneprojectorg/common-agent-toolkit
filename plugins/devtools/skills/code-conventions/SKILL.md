@@ -1,6 +1,6 @@
 ---
 name: code-conventions
-description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), and using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions. Use whenever writing or refactoring code that will be reviewed — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
+description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
 ---
 
 These are the recurring themes in `oneprojectorg/common` PR reviews. None are domain-specific to a single skill — they apply to every file the agent touches. Skip them at your peril; reviewers will catch them.
@@ -68,6 +68,10 @@ Write the word.
 Name a property for what it *is*, not for the one place it's currently rendered. A field displayed as a background today will appear in headers, cards, and previews tomorrow — a location-based name goes stale the moment a second use site lands. PR #1480 review on an image field named `backgroundImage`: "backgroundImage is an odd naming since it's not the background of the decision and will be displayed in many more places than a background. Maybe heroImage or headerImage is a better bet." Resolution: renamed to `heroImage` across schema / encoders / services / hooks.
 
 Corollary: don't mix multiple terms for one concept. Juggling `Banner` vs `OverviewImage` vs `backgroundImage` for the same field is a smell — pick one semantic name for the backend property and use it everywhere.
+
+### Keep the file name and its primary export aligned
+
+A file's name should match its main export — name the file after the function or the function after the file, not two different things. PR #1580 review on `addRelationship.ts`: "We should either name the file after the function or name the function after the file." Mismatched names make a symbol hard to locate from its file and vice versa.
 
 ### Don't prefix the normal case
 
@@ -194,6 +198,25 @@ The `@op/common` package exports a Common error hierarchy in `packages/common/sr
 - **Don't throw raw `Error`** from services — the router has no way to map it to a status code. PR #1017 fixed an inviteUser bug where the service threw `new Error(...)` and the router was string-matching to recover.
 - **Rethrow external library exceptions** as Common errors. `access-zones` throws `AccessControlException`; the assertion wrappers in `services/assert` already rethrow it as `UnauthorizedError` — don't let the library type leak into your service signatures.
 - **Don't catch-and-rethrow** in routers. The tRPC error formatter handles Common errors directly. A `try` / `catch` in a router is almost always wrong (PR #1017).
+
+## Logging — structured logger, right level, no PII
+
+Server-side logging goes through the structured `@op/logging` logger, never `console.*`. The recurring migration across PRs #1550, #1569, #1587, #1605 established four rules:
+
+- **Use `@op/logging`, not `console.error` / `console.log`.** Structured records carry `traceId` / `spanId` (OTLP correlation), and the logger serializes `Error` values properly — `JSON.stringify(new Error(...))` is `"{}"`, so a raw `console.error(err)` loses the stack. PR #1550 migrated ~90 server error sites (tRPC `onError`, webhooks, redis/realtime, `@op/common` services, app API routes) off `console.error`.
+- **Pick the level by severity — don't map `console.*` → `logger.*` 1:1.** `error` is for genuinely unexpected states only; an expected-but-recoverable absence (missing optional data, a best-effort snapshot) is `warn`; normal flow is `info`. PR #1587 review: a blanket 1:1 conversion logged recoverable states at `info` when a sibling logged the same case at `warn`. PR #1605: a collab-doc field that's absent for legacy proposals was logging `error` ~10×/day in PostHog — narrowed to the one genuinely unexpected case at `warn`.
+- **Never log raw PII.** Don't emit email addresses (or similar) to logs. Log a count plus a `sha256`-prefixed hash so records stay correlatable without exposing the value (PR #1569 — batch-send and per-invite error logs).
+- Applies in the service layer too — `@op/common` services log through the structured logger at appropriate levels, not `console.log` (PR #1569).
+
+## Fail closed on ambiguous input; order destructive steps for the safer residue
+
+- **A security decision on parsed/compared input fails closed.** When a gate hinges on parsing a value (a timestamp, a token expiry), treat unparseable or ambiguous input as denied rather than proceeding. PR #1507: "Unparseable timestamps fail closed."
+- **Order multi-step destructive cleanup so a partial failure leaves the safer residue.** Delete the owning/primary record first, so a crash mid-cleanup strands a harmless orphaned dependent row rather than a live resource missing its owner. PR #1507: the auth user is deleted before its profile, so a partial failure leaves a dead unowned profile row, not a real account stranded without a profile.
+- **Use `== null` for optional numeric/version fields** so a legitimate `0` (version 0, count 0) isn't treated as missing. PR #1605 (mirrors the cursor `!= null` rule in the `service-layer-structure` skill).
+
+## Validate untrusted paths before building URLs from them
+
+When a redirect target or path comes from user-controllable input, validate it before use — run it through `isSafeRedirectPath`, and separately check any structural assumption you're about to rely on (e.g. a leading `[locale]` segment) rather than trusting the shape. PR #1556: `const safeDest = dest && isSafeRedirectPath(dest) ? dest : '/'`, with a follow-up check that a safe path isn't necessarily locale-prefixed (`/info/tos`) before building the `/start` URL from its first segment.
 
 ## Reuse before writing
 

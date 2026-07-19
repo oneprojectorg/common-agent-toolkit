@@ -54,6 +54,10 @@ import { useRouter } from 'next/navigation';
 
 The bare router strips the locale prefix on `router.push('/foo')` and the user lands on the default-locale page. Reviewer flag (PR #1145): "Should we import our i18n version of `useRouter`?"
 
+## User-facing errors are localized copy, never the raw upstream message
+
+Never render a raw upstream / library / API error string to the user — it's untranslated and often leaks internals. Map known error flags to localized strings, fall back to a localized generic message otherwise, and send the raw error to the console for debugging. PR #1556: "Let's surface a friendlier error (that can be localized) instead" → `email_exists` maps to localized copy with a localized generic fallback, "raw error still goes to the console for debugging."
+
 ## Interpolation
 
 - Simple values: `t("Hello {name}", { name: userName })`
