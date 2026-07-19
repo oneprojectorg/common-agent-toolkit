@@ -11,6 +11,8 @@ description: React component file organization and conventions — types at top,
 
 The primary export should never be buried at the bottom under utilities.
 
+**Don't split logic into its own file when it's used in exactly one place** — colocate or inline it into the consumer. PR #1585: "This file is only used in one place. just put these items into the file that uses them in that case." The one earned exception is a small *pure* module extracted so a unit test can import it **without** dragging the client component (and its `next-intl` / `next-navigation` deps) into the Node test env — keep that module dependency-free and note why it's separate.
+
 ## Type discipline
 
 - No `any` to suppress errors. Find the right type.
@@ -79,6 +81,20 @@ The anti-pattern is `await fetchX().catch(() => undefined)` followed by silently
 When a piece of UI state should survive a reload, be link-shareable, or be readable by the server (e.g. filters, multi-step form progress, modal open/close, sign-in mode toggle), reach for **`nuqs`** instead of `useState`. Recurring review (PRs #1304, #1323): "use nuqs here for sure (as this one is a complicated beast of a form)" / "Maybe we should just standardize to nuqs here — they support server-side parsing as well" / "Filter state lives in the URL (nuqs)."
 
 Keep `useState` for ephemeral state nobody links to (hover, focus, currently-typed-but-unsubmitted text). Anything you'd want a back/forward button to step through, or want to deep-link to, belongs in `nuqs`.
+
+**A component that reads URL search params must sit under a `<Suspense>` boundary.** Anything that calls `useSearchParams` — directly or through `nuqs` `useQueryState` — suspends until hydration, so every mount point must be wrapped in `<Suspense>` (document this in the component's JSDoc). Pair it with a **pre-hydration fallback that still works** — e.g. a plain `<a>` link — so the control is usable before the client bundle hydrates. PR #1556: `JoinDecisionButton` "reads/writes `?join` via nuqs, so any mount point must sit under a Suspense boundary," backed by a `JoinDecisionButtonFallback` plain link "so the button works even before hydration."
+
+### Form validation: let the schema be the source of truth
+
+On React Aria Components form fields (`TextField`, etc.), set `validationBehavior="aria"` so the app's Zod / TanStack Form schema is the single source of truth. The React Aria default is `validationBehavior="native"`, which enforces the browser's native constraints first — a `type="url"` field rejects a scheme-less URL (`example.com`) *before* the request ever reaches your schema, so no schema error renders and submission silently blocks. PR #1578: adding `validationBehavior="aria"` fixed the scheme-less-URL case, "matching the existing pattern already used in `ProcessSurveyModal` and `CustomFormModal`." When you fix a validation-behavior bug on one field, audit and apply the same fix to every equivalent field — the reviewer will (PR #1578: "Also needed on … `PersonalDetailsForm.tsx` url field, not sure if there are others").
+
+### Build submission payloads from the persisted store, not ephemeral state
+
+For a multi-step / persisted form, build the submit payload from the **persisted store** (the source of truth), not from a component's local React state. Local `values` state resets to empty on any remount — a retry after a transient failure, or a refresh — silently sending fields as `undefined`. PR #1583: `submitOrganization` built its payload from `MultiStepForm`'s ephemeral local state which "resets to `[]` on any remount," sending `orgType`/`bio` as undefined; the fix reads from the store via `getOrgCreationStepValues()` because "the store is the real source of truth."
+
+### Wrap browser storage access so it degrades gracefully
+
+`localStorage` / `sessionStorage` access can throw — quota overflow, private mode, blocked cookies, SSR. Wrap it so a failure logs a warning and the flow keeps working in memory instead of crashing. PR #1608: storage access is wrapped "so a quota overflow (or a browser where storage is disabled …) degrades gracefully: the form keeps working in memory and logs a warning instead of throwing." (See the `file-uploads` skill for the companion rule: never persist transient base64 `data:` URLs to storage in the first place.)
 
 ### Mutation errors go to `onError`, not the call site
 

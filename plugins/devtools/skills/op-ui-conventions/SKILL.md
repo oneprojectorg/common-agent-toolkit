@@ -18,6 +18,13 @@ When you find yourself overriding `@op/ui` styles to fight a layout (`color="sec
 
 Don't pull in a third-party `<TabPanel>` / `<Sidebar>` without checking what `@op/ui` already provides — reviewers will ask why.
 
+Even when a hand-rolled class list *looks* correct, reviewers still want the library component so styling stays consistent as tokens evolve (PRs #1556, #1585). The recurring specifics:
+
+- **Standalone styled control → use the `Button` variant, not hand-rolled classes.** A back-arrow or link-styled action should be a `Button` variant (`ghost` / `link`), and its centering (`justify-center items-center`) is already built in — don't re-add it. Reserve the **`inline`** variant for a control embedded *within surrounding text*; using `inline` for a standalone button makes it wrap (PR #1585).
+- **Panels / surfaces → `<Surface variant="filled">`, not a raw `<div>` with a background color** (PR #1585).
+- **Prompts / empty states → the shared `EmptyState` component**, not a hand-rolled `Surface` prompt (PR #1556).
+- **Rely on component defaults** (e.g. `Modal`'s built-in close X and default sizing) instead of passing redundant `className` overrides that just re-state the default (PRs #1556, #1585).
+
 ## Colors
 
 - Use token-mapped Tailwind classes: `text-primary-teal`, `bg-neutral-gray1`, etc.
@@ -64,6 +71,12 @@ When you must open an external link programmatically, always pass the features s
 ## Menu already brings its own Popover
 
 `@op/ui` `<Menu>` renders its own `Popover` — do NOT wrap it in a second `Popover`. Make the trigger element (e.g. a picker) the direct target of `<MenuTrigger>` and forward `placement` to the `Menu` so a single popover is used, following the existing `OptionMenu` pattern (PR #1544 self-review: renders the picker as the direct target of MenuTrigger and forwards placement to the Menu, so a single popover is used — exactly the pattern OptionMenu already uses).
+
+Corollary: when you render menu content **directly inside a `Modal` / `Sheet`** with no `MenuTrigger` (the mobile bottom-sheet case), use `<MenuList>`, not `<Menu>`. `<Menu>` is a `Popover` + `MenuList` combo that needs a trigger; without one it renders an orphan popover. PR #1597 fixed three mobile sheets that rendered `<Menu>` inside a sheet without a trigger by swapping them to `<MenuList>`.
+
+## Cap bottom-sheet / drawer height
+
+Cap bottom-sheet and drawer content at `max-h-[85svh]` (matching the `Sheet` bottom variant) so long content can't stretch it full-screen — which hides the overlay and breaks tap-outside-to-dismiss. PR #1597: "Capped the avatar drawer at `max-h-[85svh]` … so a long profile list can't stretch it full-screen — the overlay stays visible and tap-outside-to-dismiss works."
 
 ## Variants and design parity
 

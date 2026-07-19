@@ -29,6 +29,8 @@ If a bug fix has a service-layer cause, the test belongs in Vitest even if the s
 
 **A regression test must reproduce the exact path.** A regression test must fail before the fix and pass after — and for the *exact* reason of the bug. If the obvious test passes both before and after the fix, it isn't exercising the buggy path; engineer the scenario that forces it (PR #1558 self-review: the grid-mode test passed either way, so the regression test used a location-field template to put the sentinel behind the pin query's Suspense boundary and force the late-mount attach). If you can't construct a case that fails on the unpatched code, you haven't proven the fix.
 
+**Cover query internals and wire shape when you change them.** When you rework a query's ordering or relation-hydration internals, add regression tests that pin *distinct* sort-key values and assert the returned order survives the re-order step, and seed a nested relation and assert its hydrated shape is preserved (PR #1516 — the two-step page-then-hydrate rewrite). When you change an endpoint's output shape, add a test asserting the new field survives tRPC's output `parse` — it silently strips any field the encoder doesn't list, so a card renders blank with no error (PR #1551; see the `api-endpoints` skill).
+
 ## Naming `describe` and `it` blocks — read like a sentence
 
 Recurring review pattern: `it()` and `describe()` should read like a sentence describing the assertion, not a snippet of jargon.
