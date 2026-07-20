@@ -123,6 +123,13 @@ DB (import it once per workspace), then bind it to the agent.
 | `github.com/garrytan/gstack` | `autoplan`, `investigate` (2) |
 | runtime built-ins (no import; shipped with the runtime) | `review`, `vercel-react-best-practices` (2) |
 
+**On gstack:** gstack (`github.com/garrytan/gstack`) is *not* installed as a
+plugin, marketplace, or CLI anywhere in this setup — nothing to `brew install`
+or add to `~/.claude`. Its capabilities reach the agent purely as two skills,
+`autoplan` and `investigate`, imported into the Multica workspace and bound like
+any other imported skill. That is why it doesn't appear under "Base tools" or as
+an MCP server: the only footprint is those two skill imports (below).
+
 Example import + bind for one toolkit skill:
 
 ```bash
