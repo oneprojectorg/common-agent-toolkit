@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 19 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
+One install gives engineers the full agent harness for this codebase: 20 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
 ## Install
 
@@ -37,6 +37,7 @@ Then commit the resulting diff.
 
 | Skill | What it covers |
 |---|---|
+| `agent-setup` | How to replicate the OP Bot Opus agent — the Multica platform agent (runtime, model, `instructions`, the 22 bound skills) and the local Claude Code harness that mirrors it (this plugin, `settings.json`, the `block-ai-coauthor` hook, PostHog + claude.ai MCP servers, the `multica` CLI). |
 | `access-control` | Authorization via the `access-zones` library and our wrappers (`assertProfileAccess`, `assertOrgAccess`, `assertProfileAdmin`, `<AccessBoundary>`, `AccessTierError`). |
 | `api-endpoints` | Adding / editing tRPC endpoints — the 4-tier procedure model (`networkAuthenticated` / `authenticatedConfirmed` / `authenticated` / `open`), encoder pattern, schemas in `@op/common`, realtime channels, and filtering auth-sensitive fields at the encoder so they can't leak from a future query. |
 | `asana-api` | Talking to Asana directly via the REST API. |
