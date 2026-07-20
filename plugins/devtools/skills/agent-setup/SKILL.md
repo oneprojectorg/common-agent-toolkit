@@ -1,11 +1,11 @@
 ---
 name: agent-setup
-description: How to stand up a clone of the One Project "OP Bot Opus" coding agent — the Multica cloud agent (runtime, model, instructions, bound skills) and the local Claude Code harness that mirrors it (devtools plugin, settings.json, the block-ai-coauthor hook, MCP servers, the multica CLI). Use when creating a new Multica coding agent, onboarding a machine to run one, replicating this agent's exact configuration, or auditing what a running agent is made of.
+description: How to stand up a clone of the One Project "OP Bot" coding agent — the Multica cloud agent (runtime, model, instructions, bound skills) and the local Claude Code harness that mirrors it (devtools plugin, settings.json, the block-ai-coauthor hook, MCP servers, the multica CLI). Use when creating a new Multica coding agent, onboarding a machine to run one, replicating this agent's exact configuration, or auditing what a running agent is made of.
 ---
 
-# Replicating the OP Bot Opus agent
+# Replicating the OP Bot agent
 
-This skill captures everything that makes up **OP Bot Opus** — the autonomous
+This skill captures everything that makes up **OP Bot** — the autonomous
 coding agent that plans and builds features/bugs in the One Project `common`
 monorepo — so you can stand up an identical one.
 
@@ -37,7 +37,7 @@ source workspace returns:
 
 | Field | Value |
 |---|---|
-| `name` | `OP Bot Opus` |
+| `name` | `OP Bot` |
 | `description` | `Plans and builds features and/or bugs in our codebase` (catalog only — NOT the runtime prompt) |
 | `model` | `claude-opus-4-8` |
 | `thinking_level` | `""` (runtime default) |
@@ -72,7 +72,7 @@ the full behavior contract in `instructions`. Write it to a file, never inline
 
 ```bash
 multica agent create \
-  --name "OP Bot Opus" \
+  --name "OP Bot" \
   --runtime-id <runtime-id> \
   --model claude-opus-4-8 \
   --description "Plans and builds features and/or bugs in our codebase" \
