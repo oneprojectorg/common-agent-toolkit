@@ -77,11 +77,14 @@ See `multica-runtimes-and-repos` for the runtime/daemon/claim chain.
 
 **Also required on the runtime machine, beyond the daemon/runtime:**
 
-- **Provider (Anthropic) auth.** The runtime launches Claude Code to run
-  `claude-opus-4-8`, so that Claude Code must be authenticated to Anthropic
-  (signed-in account or API key). `multica setup cloud` wires the Multica side;
-  verify the provider itself has working credentials or the agent can't run the
-  model.
+- **Provider auth = the machine's Claude Code login.** The runtime launches the
+  machine's Claude Code to run `claude-opus-4-8`, and it uses that install's
+  **signed-in Claude account** (the machine login) — there is no separate
+  per-agent API key or Multica-proxied credential. So Claude Code must be
+  installed and authenticated on the runtime machine *before anything else*
+  (Layer 2 §1); `multica setup cloud` only wires the Multica side. This is the
+  hard prerequisite for the whole setup — without an installed, logged-in Claude
+  Code, neither this skill nor the agent can run the model.
 - **A workspace + project + repo resource.** The agent needs something to work
   on: a Multica **workspace**, a **project** with the target GitHub repo attached
   as a `github_repo` **resource**, and issues assigned to the agent. Without the
@@ -219,7 +222,10 @@ replica, not just on a developer's laptop.
 
 ### 1. Base tools
 
-- **Claude Code** installed and signed in.
+- **Claude Code** installed and signed in. This is the foundational
+  prerequisite: the runtime runs the agent's model through *this* install using
+  *this* machine login (see Layer 1 → "Provider auth"), and the skill itself runs
+  inside Claude Code. No Claude Code, nothing else works.
 - **`gh` CLI + SSH auth to GitHub** — required to install the private plugin
   marketplace.
 - **`multica` CLI** (also the layer-1 runtime): `brew install multica-ai/tap/multica`,
