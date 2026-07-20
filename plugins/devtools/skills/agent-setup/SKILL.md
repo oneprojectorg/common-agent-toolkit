@@ -63,6 +63,18 @@ multica runtime list --output json    # note the runtime_id, check it is online
 
 See `multica-runtimes-and-repos` for the runtime/daemon/claim chain.
 
+> **Terminology — "runtime" is not Claude Code.** In Multica, the **daemon** is
+> a local process that claims queued tasks; the **runtime** is the execution
+> target it manages. On claim, the daemon prepares the task workdir (repo
+> checkout, env, injected skills, a generated `CLAUDE.md`) and then launches the
+> **provider CLI** — for this agent that provider is **Claude Code** (`claude`),
+> running the `claude-opus-4-8` model. So Claude Code is what the runtime
+> *launches*, not the runtime itself; other providers (Codex, OpenCode) can sit
+> behind the same runtime layer. When this skill says "runtime built-in" skills
+> (e.g. `review`), it means skills the Multica **runtime** bundles and drops into
+> the workdir's `.claude/skills/`, which Claude Code then loads — not Claude
+> Code's own built-in commands.
+
 ### Create the agent
 
 `instructions` is the only text the daemon ships to the model as the durable
