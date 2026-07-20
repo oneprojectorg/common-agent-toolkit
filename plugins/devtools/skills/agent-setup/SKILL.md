@@ -251,6 +251,62 @@ author is always the configured human — never an AI identity (the
 
 ---
 
+## Environment variables
+
+The agent reads these from the **process environment the Multica daemon
+inherits from the shell that launched it** — so set the secrets in your **ZSH
+env file** (`~/.zshenv`, which loads for non-interactive shells too, or
+`~/.zshrc`). The reference agent carries **no** `custom_env`
+(`has_custom_env: false`); it relies entirely on the daemon's inherited shell
+environment. A local developer can equally keep the same values in the repo's
+gitignored `.env.local`.
+
+> Only the variable **names** are listed here — never commit or print the
+> values; that is a security violation. If one of these is empty, the skills
+> stop and ask rather than inventing a value.
+
+### Set these yourself (secrets + deployment ids)
+
+| Name | Read by | Purpose |
+|---|---|---|
+| `ASANA_PERSONAL_ACCESS_TOKEN` | `asana-api`, `pickup-task`, `implement-task` | Asana REST auth (`Authorization: Bearer …`) |
+| `ASANA_PROJECT_ID` | same | gid of the team's Asana task project |
+| `ASANA_BACKLOG_SECTION_ID` | `pickup-task`, `implement-task` | board section gid — Backlog |
+| `ASANA_IN_PROGRESS_SECTION_ID` | `implement-task` | board section gid — In Progress |
+| `ASANA_IN_REVIEW_SECTION_ID` | `implement-task` | board section gid — In Review |
+| `ASANA_BLOCKED_SECTION_ID` | `implement-task` | board section gid — Blocked |
+| `ASANA_ON_HOLD_SECTION_ID` | task-board flows | board section gid — On Hold (set on this deployment) |
+| `TIPTAP_PRO_TOKEN` | `dev-environment` (docker stack) | TipTap Pro registry token |
+
+Shape only — supply your own values, never these placeholders:
+
+```zsh
+# ~/.zshenv
+export ASANA_PERSONAL_ACCESS_TOKEN=...
+export ASANA_PROJECT_ID=...
+export ASANA_BACKLOG_SECTION_ID=...
+export ASANA_IN_PROGRESS_SECTION_ID=...
+export ASANA_IN_REVIEW_SECTION_ID=...
+export ASANA_BLOCKED_SECTION_ID=...
+export ASANA_ON_HOLD_SECTION_ID=...
+export TIPTAP_PRO_TOKEN=...
+```
+
+The PostHog MCP server and the claude.ai integrations authenticate over OAuth,
+not env vars — nothing to set here for them.
+
+### Injected by the Multica runtime — do NOT set these yourself
+
+The daemon sets these per task when it launches the provider. They are
+task-scoped and change every run; hardcoding them in your ZSH env file would
+break task routing and auth. Listed so you recognize them, not so you set them:
+
+`MULTICA_AGENT_ID`, `MULTICA_AGENT_NAME`, `MULTICA_WORKSPACE_ID`,
+`MULTICA_SERVER_URL`, `MULTICA_TASK_ID`, `MULTICA_TASK_SLOT`,
+`MULTICA_DAEMON_PORT`, `MULTICA_TOKEN`.
+
+---
+
 ## Verifying a replica
 
 - Platform agent: `multica agent get <id> --output json` — compare `model`,
