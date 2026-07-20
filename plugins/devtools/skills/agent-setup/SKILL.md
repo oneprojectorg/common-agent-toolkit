@@ -155,6 +155,17 @@ tools" or the MCP section. To get the *full* gstack experience (specialist
 sub-checks, learnings, brain-sync) you would additionally install the gstack
 toolchain at `~/.claude/skills/gstack/`; this deployment does not.
 
+**Replica fidelity:** following this skill's Layer 1 steps lands you in the
+*same* state as the current agent — the full 22-skill set, with `/review`
+present as a runtime built-in that runs in the same degraded/standalone mode. It
+does **not** produce a gstack toolchain install; the 18 toolkit skills and the
+two gstack skills (`autoplan`, `investigate`) are workspace imports, and
+`review` + `vercel-react-best-practices` come free with the Multica runtime. The
+only way a replica ends up with a real gstack install is if you *deliberately*
+add that step (not included here). Note the two runtime built-ins track the
+Multica **runtime version**, so match the runtime version to get the identical
+built-in set.
+
 Example import + bind for one toolkit skill:
 
 ```bash
