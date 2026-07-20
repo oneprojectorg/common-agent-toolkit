@@ -159,6 +159,22 @@ agent's toolkit. Everything here lives under `~/.claude`.
 - **`multica` CLI** (also the layer-1 runtime): `brew install multica-ai/tap/multica`,
   then `multica setup cloud`.
 
+Native apps that back the MCP servers and the dev stack (install these too —
+several MCP integrations and the docker dev stack are non-functional without
+them):
+
+- **Figma desktop app** — required by the Figma MCP server. The MCP talks to
+  the locally running Figma app; the browser build alone is not enough. Install
+  it (`brew install --cask figma`) and sign in before using any `figma` MCP
+  tool.
+- **OrbStack** — the Docker/container engine used to run the full local stack
+  (`pnpm docker:dev`, see `dev-environment`). Install it
+  (`brew install --cask orbstack`) and let it provide the Docker socket; the
+  docker stack won't come up without a running engine.
+
+This list tracks the tools this deployment currently depends on; add to it as
+new MCP servers or integrations bring their own native prerequisites.
+
 ### 2. Install the devtools plugin
 
 Inside Claude Code (once per machine):
@@ -241,7 +257,9 @@ Two sources of MCP tools on the reference machine:
   Figma, Gmail, Google Drive, Google Calendar, Granola, Justworks, Notion,
   Zapier, Zoom. Connect only the ones you need; each authenticates through its
   own OAuth flow. Note interactively-authenticated claude.ai MCP servers may be
-  absent in headless/cron runs.
+  absent in headless/cron runs. **Figma** additionally needs the Figma desktop
+  app installed and running (see "Base tools" above) — the OAuth connection
+  alone does not make its MCP tools work.
 
 ### 6. Git identity
 
