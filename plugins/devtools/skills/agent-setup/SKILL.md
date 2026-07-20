@@ -121,14 +121,27 @@ DB (import it once per workspace), then bind it to the agent.
 |---|---|
 | `github.com/oneprojectorg/common-agent-toolkit` (this repo, `plugins/devtools/skills/<name>`) | `access-control`, `api-endpoints`, `asana-api`, `branch-and-pr`, `code-conventions`, `component-file-structure`, `dev-environment`, `drizzle-migrations`, `i18n-strings`, `implement-task`, `op-ui-conventions`, `pickup-task`, `pr-description`, `realtime-channels`, `release`, `service-layer-structure`, `test-conventions`, `workspace-shortcuts` (18) |
 | `github.com/garrytan/gstack` | `autoplan`, `investigate` (2) |
-| runtime built-ins (no import; shipped with the runtime) | `review`, `vercel-react-best-practices` (2) |
+| runtime built-ins (no import; shipped with the runtime) | `review` (gstack's review skill), `vercel-react-best-practices` (vercel-labs) (2) |
 
-**On gstack:** gstack (`github.com/garrytan/gstack`) is *not* installed as a
-plugin, marketplace, or CLI anywhere in this setup — nothing to `brew install`
-or add to `~/.claude`. Its capabilities reach the agent purely as two skills,
-`autoplan` and `investigate`, imported into the Multica workspace and bound like
-any other imported skill. That is why it doesn't appear under "Base tools" or as
-an MCP server: the only footprint is those two skill imports (below).
+**On gstack:** the gstack **toolchain** is *not* installed on this machine —
+there is no `~/.claude/skills/gstack/` tree, no `~/.gstack/` state dir, and no
+gstack CLI (verified directly). Nothing to `brew install` or add to `~/.claude`.
+What the agent actually uses are gstack **skills**, delivered two ways:
+
+- **Workspace-imported:** `autoplan` and `investigate`, imported from
+  `github.com/garrytan/gstack` and bound like any other skill (below).
+- **Runtime built-in:** `review` — its body *is* gstack's review skill (it
+  self-identifies as GStack and calls `~/.claude/skills/gstack/bin/*` helpers).
+  The Multica runtime ships it as a built-in and injects it per task. Because the
+  gstack toolchain isn't installed, those helper-bin calls are all guarded
+  (`… 2>/dev/null || true`) and no-op — `/review` runs standalone in a degraded
+  mode without gstack's config, telemetry, or specialist files.
+
+So `/review` **is** a gstack skill — but it arrives through the Multica runtime,
+not a machine-level gstack install, which is why gstack has no entry under "Base
+tools" or the MCP section. To get the *full* gstack experience (specialist
+sub-checks, learnings, brain-sync) you would additionally install the gstack
+toolchain at `~/.claude/skills/gstack/`; this deployment does not.
 
 Example import + bind for one toolkit skill:
 
