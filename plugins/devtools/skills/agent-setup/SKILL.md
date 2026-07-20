@@ -75,6 +75,25 @@ See `multica-runtimes-and-repos` for the runtime/daemon/claim chain.
 > the workdir's `.claude/skills/`, which Claude Code then loads — not Claude
 > Code's own built-in commands.
 
+**Also required on the runtime machine, beyond the daemon/runtime:**
+
+- **Provider (Anthropic) auth.** The runtime launches Claude Code to run
+  `claude-opus-4-8`, so that Claude Code must be authenticated to Anthropic
+  (signed-in account or API key). `multica setup cloud` wires the Multica side;
+  verify the provider itself has working credentials or the agent can't run the
+  model.
+- **A workspace + project + repo resource.** The agent needs something to work
+  on: a Multica **workspace**, a **project** with the target GitHub repo attached
+  as a `github_repo` **resource**, and issues assigned to the agent. Without the
+  project resource, `multica repo checkout` inside a task has no repo to fetch.
+  See `multica-projects-and-resources`.
+- **Layer 2 on this same machine.** The daemon launches Claude Code as the same
+  OS user out of the same `~/.claude`, so the Layer-2 config below (model,
+  permissions, the `block-ai-coauthor` hook, the devtools plugin + its two
+  branch hooks, MCP servers) is *also* the environment the agent runs in — not a
+  human-only convenience. For a faithful agent replica, do Layer 2 on the
+  runtime machine too.
+
 ### Create the agent
 
 `instructions` is the only text the daemon ships to the model as the durable
@@ -192,7 +211,11 @@ a task workdir. See `multica-working-on-issues` and `multica-runtimes-and-repos`
 ## Layer 2 — the local Claude Code harness
 
 This is what a human engineer installs so their own Claude Code mirrors the
-agent's toolkit. Everything here lives under `~/.claude`.
+agent's toolkit. Everything here lives under `~/.claude`. It is **also** what the
+agent runtime uses: the daemon launches Claude Code as the same OS user out of
+this same `~/.claude`, so these settings/hooks/plugins/MCP servers govern the
+autonomous agent too — do this layer on the runtime machine for a faithful
+replica, not just on a developer's laptop.
 
 ### 1. Base tools
 
