@@ -9,17 +9,18 @@ This skill captures everything that makes up **OP Bot** — the autonomous
 coding agent that plans and builds features/bugs in the One Project `common`
 monorepo — so you can stand up an identical one.
 
-There are **two independent layers**. Decide which you need:
+There are **two layers**:
 
 1. **The Multica platform agent** — the workspace `agent` row the daemon runs
    autonomously when an issue is assigned to it. This is "the agent" proper.
-2. **The local Claude Code harness** — the `~/.claude` config a *human*
-   engineer installs to work the same codebase with the same skills, hooks, and
-   conventions. Independent of the platform agent, but built from the same
-   toolkit.
+2. **The local Claude Code harness** — the `~/.claude` config (plugin, settings,
+   hooks, MCP) that gives Claude Code the same skills, hooks, and conventions.
 
-Do layer 1 to reproduce the autonomous bot. Do layer 2 to give a developer the
-same assistant locally. Do both to fully mirror this setup.
+They are **not fully independent**: because the daemon launches Claude Code as
+the same OS user out of the same `~/.claude`, Layer 2 is also the environment the
+Layer 1 agent runs in. So a faithful **agent** replica needs *both* layers on the
+runtime machine. A developer who only wants the same assistant on their own
+laptop can do Layer 2 alone.
 
 > Values below (agent id, runtime id, workspace id, skill ids) are specific to
 > this deployment and change per workspace. Read live state with
