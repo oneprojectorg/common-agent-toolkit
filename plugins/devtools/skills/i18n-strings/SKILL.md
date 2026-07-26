@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Also use the i18n useRouter (not next/navigation). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, or any string a user will see; or when navigating programmatically.
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, or any string a user will see; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
 ---
 
 ## Rule
@@ -53,6 +53,8 @@ import { useRouter } from 'next/navigation';
 ```
 
 The bare router strips the locale prefix on `router.push('/foo')` and the user lands on the default-locale page. Reviewer flag (PR #1145): "Should we import our i18n version of `useRouter`?"
+
+**Server-side redirects: thread the actual locale, don't hardcode a segment.** When you build a redirect / navigation URL by hand (a server utility, middleware — anywhere the i18n `useRouter` isn't available), never hardcode a locale segment like `/en/start`. Hardcoding `/en` sends a non-English user (e.g. at `/fr/decisions`) to the English page. The current locale is already the leading segment of `x-pathname` — extract it and build `/${locale}/start`. PR #1638: "`buildOnboardingRedirect` always returns `/en/start` regardless of the user's locale … the user's current locale is already available on `x-pathname` (it's the leading segment)."
 
 ## User-facing errors are localized copy, never the raw upstream message
 

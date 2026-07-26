@@ -1,6 +1,6 @@
 ---
 name: code-conventions
-description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
+description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, explicit String() casts when comparing across a library boundary, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
 ---
 
 These are the recurring themes in `oneprojectorg/common` PR reviews. None are domain-specific to a single skill — they apply to every file the agent touches. Skip them at your peril; reviewers will catch them.
@@ -136,6 +136,14 @@ const rubric = (instance.instanceData as InstanceData).rubricTemplate;
 
 When the inferred Drizzle type isn't precise enough, narrow it once with a Zod schema in `services/<feature>/schemas.ts` or with a typed wrapper on the table reference. Don't propagate the cast.
 
+### Cast explicitly when comparing across a library boundary
+
+When a third-party runtime type is wider than what you actually pass (dnd-kit ids typed `string | number`, for example), cast explicitly at the comparison point — `String(a) === String(b)` — rather than trusting the implicit runtime contract. A strict `===` between a stringified value and an untyped-but-numeric library value is always `false` when a number slips through, so an index lookup returns `-1` and downstream logic (`arrayMove`) silently corrupts data with no error. PR #1624 fixed a `findIndex` mismatch with `String(active.id) === String(over.id)`.
+
+## Return a tagged union for success/failure, not undefined-on-success
+
+A function or hook that can succeed or fail validation returns an explicit discriminated union — `{ ok: true } | { ok: false; errors }` — never `undefined` on success with error data on failure. An ambiguous return makes it trivial for a caller to invoke it without capturing the result and silently drop the errors (no feedback shown). The codebase already does this (`useClaimAccount`) — follow it. PR #1624: "`nextStep` returns undefined on success and fieldErrors on failure … An explicit shape like `{ ok: true } | { ok: false; errors }` (or throwing) makes this impossible to miss."
+
 ### API types from `@op/api/encoders`, never `RouterOutput`
 
 Already covered in `api-endpoints` and `component-file-structure` skills. Re-stating because it's recurrent: `RouterOutput['x']['y']` couples callers to the router shape; encoder `z.infer` types are the source of truth.
@@ -198,6 +206,7 @@ The `@op/common` package exports a Common error hierarchy in `packages/common/sr
 - **Don't throw raw `Error`** from services — the router has no way to map it to a status code. PR #1017 fixed an inviteUser bug where the service threw `new Error(...)` and the router was string-matching to recover.
 - **Rethrow external library exceptions** as Common errors. `access-zones` throws `AccessControlException`; the assertion wrappers in `services/assert` already rethrow it as `UnauthorizedError` — don't let the library type leak into your service signatures.
 - **Don't catch-and-rethrow** in routers. The tRPC error formatter handles Common errors directly. A `try` / `catch` in a router is almost always wrong (PR #1017).
+- **Never a broad catch-all (`.catch(() => null)`) around a call that can throw for more than one reason.** When only one error is expected and recoverable (e.g. a `NotFoundError` from an assert helper when the row is legitimately absent), catch *that* narrowly and re-throw everything else. A catch-all also swallows transient failures (a DB hiccup) and lets the code fall through to wrong behavior with no error surfaced. PR #1633: `assertUserByAuthId(...).catch(() => null)` absorbed both the absent-row case *and* transient DB errors, so a short-lived hiccup silently skipped an access-filtering exclusion and returned an unfiltered list including proposals the caller must not see. Re-throw anything that isn't the expected `NotFoundError`.
 
 ## Logging — structured logger, right level, no PII
 

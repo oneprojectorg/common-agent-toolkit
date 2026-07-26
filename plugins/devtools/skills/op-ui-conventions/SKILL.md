@@ -1,6 +1,6 @@
 ---
 name: op-ui-conventions
-description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Keep @op/ui framework-agnostic (no next/image inside packages/ui — inject it via a render prop) and use semantic heading hierarchy (the hero title is the h1). Use when writing JSX/TSX, picking a color or font size, importing from @op/ui, choosing a variant vs creating a one-off, adding an image preview to a UI primitive, setting heading levels, or editing packages/ui.
+description: Use the @op/ui component library, design tokens (primary-teal, neutral-gray), and the type scale (text-title-lg, text-sm) instead of native HTML, hex colors, or raw Tailwind sizes. Prefer semantic dark-mode-aware tokens (bg-muted, text-muted-foreground) over fixed palette values (bg-gray-100). Sentence-case labels matched to siblings. Accessibility and semantics — action-oriented aria-label (not the display label), render an anchor only with a real href else a div, default dir="auto" on text-bearing components, role="tabpanel" only when a paired tab exists. Keep @op/ui framework-agnostic (no next/image inside packages/ui — inject it via a render prop; package components take copy via a single i18n-agnostic prop) and use semantic heading hierarchy (the hero title is the h1). Use when writing JSX/TSX, picking a color or font size, casing a label, setting an aria-label or dir, importing from @op/ui, choosing a variant vs creating a one-off, adding an image preview to a UI primitive, setting heading levels, or editing packages/ui or packages/sense.
 ---
 
 ## Components
@@ -31,7 +31,21 @@ Even when a hand-rolled class list *looks* correct, reviewers still want the lib
 - **Never** use arbitrary hex values like `bg-[#333]` or `text-[#abc]`.
 - Token source of truth: `packages/styles/tokens.css` (`--op-*` CSS vars), mapped in `packages/styles/shared-styles.css`.
 - The shadcn-derived `--color-background` / `--color-foreground` vars are now defined too (PR #1223). `bg-background` is a valid class — but prefer the named-token classes when you mean a specific brand color.
+- **Never a fixed Tailwind palette value (`bg-gray-100`, `text-slate-500`) — use the semantic token** (`bg-muted`, `bg-background`, `bg-accent`, `text-muted-foreground`). A fixed palette value doesn't respond to dark mode, so a `bg-gray-100` element stays light while its surrounding surface inverts — a jarring regression. Pick the token that keeps correct contrast against its surface (e.g. `bg-background` on a `bg-muted` dropzone). PR #1626 review: "`bg-gray-100` is a fixed Tailwind palette value that does not respond to dark mode, unlike every other color used in this file … Using `bg-muted` keeps it consistent and adapts automatically."
 - **Links in prose must be underlined, not color-only.** A link inside a text block styled only with `text-primary-teal` fails the axe `link-in-text-block` rule when color contrast alone is insufficient — add an underline so it stays distinguishable from surrounding text. PR #1524: "links in prose need some contrast with the surrounding text to be recognizable, especially when there isn't a ton of color contrast."
+
+## Label casing — sentence case, matched to siblings
+
+UI label, button, and menu-item strings are **sentence case** ("Add to organization", "Edit profile", "View analytics"), not title case ("Add to Organization"). When you add a new label, match the casing of the sibling labels already in that block — a lone title-cased entry reads as a visual inconsistency. PR #1649 review: "Every other menu-item string in this block uses sentence case … but 'Add to Organization' uses title case. This will look visually inconsistent." Apply the correction across **every** locale dictionary file, not just `en.json` — they all follow the same pattern.
+
+## Accessibility and semantics
+
+Reviewers (and the axe / a11y CI bots) consistently flag these on new components — most surfaced during the `@op/sense` component-library port.
+
+- **`aria-label` describes the button's ACTION, not the display label.** Reusing a display label (`aria-label="Profile photo"` on an upload button) leaves a screen-reader user unable to tell what the control *does*. Prefer an action-oriented, contextual name — `Upload ${label}`, falling back to a generic `Upload image`. PR #1626: "the camera button's accessible name becomes 'Profile photo', which doesn't communicate what the button does."
+- **Only render an `<a>` when a real `href`/`url` is present; render a plain `<div>` otherwise.** An href-less anchor that still carries `target="_blank"` / `rel="noopener noreferrer"` is a semantically ambiguous element that assistive tech may announce as an unlabelled link. PR #1626: "card only wraps in an `<a>` when a url is present; otherwise it renders a plain `<div>`."
+- **Default `dir` to `"auto"` on text-bearing components** (`dir = 'auto'` as a param default), so RTL content resolves its own writing direction. Keep this consistent across sibling components in a file — a new header that spreads `...props` without the default is a gap. PR #1622: "Every other component in this file (Header1-Header4) defaults dir to 'auto' … GradientHeader spreads ...props but there is no default."
+- **Apply `role="tabpanel"` only when an associated tab element actually exists**, and pair it with `aria-labelledby` pointing at that tab. ARIA requires each tabpanel to be labelled by its tab; applying the role unconditionally (e.g. in a single-pane layout where the `Tabs`/`TabsList` tree isn't rendered) leaves the panel with no accessible name. PR #1622.
 
 ## Type scale
 
@@ -93,6 +107,7 @@ Read `packages/ui/src/<component>` to confirm the API before introducing a new c
 
 - PR #1480: `BannerImageField` added a `renderPreview` prop so the app passes a Next `<Image fill>` while `@op/ui` stays `next`-free — same reason `AvatarUploader` uses a plain `<img>`. Review: "Can this be a NextImage so that we get the benefits of that? or we simply pass in the image which is what we do with the Avatar."
 - Wrinkle: `next/image` can't optimize a transient `blob:` optimistic URL, so the internal fallback renders a plain `<img>` for the blob frame while the stable public URL gets the optimized image.
+- **Same rule for i18n: a package component can't call the app's translation hook, so it must accept all user-facing copy from the caller.** Group the strings into a single `copy` prop object rather than spraying many individual string props across every call site. PR #1626 (`BannerImageField`): "All user-facing copy, grouped into one prop so the component stays i18n-agnostic … without spraying six string props across every call site."
 
 ## React/Next.js performance
 
