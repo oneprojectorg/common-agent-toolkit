@@ -1,6 +1,6 @@
 ---
 name: test-conventions
-description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), debugging a failing test, or fixing missing env vars in Playwright runs.
+description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, writing a test data helper that throws like production rather than no-opping, debugging a failing test, or fixing missing env vars in Playwright runs.
 ---
 
 ## Three test surfaces
@@ -107,8 +107,16 @@ pnpm e2e                     # run the specs
 
 `pnpm e2e:ui` opens the Playwright UI runner — useful for debugging a single spec.
 
+## Test helpers mirror production strictness
+
+A test data-manager helper that no-ops on an id it can't find turns a typo into a confusing assertion failure three steps later — the test reads "expected `openReviews: true`, got `false`" and nothing points at the wrong `phaseId`. Have the helper throw the same error production would (`assertInstancePhase` → `NotFoundError`) so the mistake surfaces where it was made. PR #1694: "If `phaseId` doesn't match any entry in the phases array, the `map` returns all phases unchanged and `openReviews` is never written … Consider throwing when the phase isn't found, mirroring how `assertInstancePhase` behaves in production code."
+
+Corollary: a helper is production code with a different caller. Reuse the real assertion rather than reimplementing a looser version of it.
+
 ## Playwright specifics
 
+- **Never navigate the DOM structurally to reach an element.** `.locator('..').locator('..').getByRole('button')` encodes the exact nesting depth of a component you don't control — one wrapper `<div>` added by a library upgrade and the chain either misses or silently matches a different button, failing with no useful message. Add a `data-testid` (or an `aria-label` that's worth having anyway) to the element in the component and select on that. PR #1699: "Adding a `data-testid="open-reviews-toggle"` … would make this selector stable and self-documenting without requiring DOM-path knowledge in the test."
+- **A comment describing what a test covers must match its assertions.** A block commented "asserts the name, the recommendation badge, and the score" with only two `expect`s tells the next reader the badge is protected when it isn't — a refactor that drops it passes. Either add the missing assertion or narrow the comment. PR #1699.
 - **Never a hardcoded `sleep` / `setTimeout` / `waitForTimeout` to wait for async state** (e.g. a DB write) to become visible before asserting. A fixed delay is inherently flaky — too short on a loaded CI runner, wasted time on a fast machine. Wait for a concrete signal instead: rely on Playwright's built-in auto-retrying assertions (`expect(locator).toBeVisible()` polls for you), or poll for the actual condition. PR #1639 dropped a raw 600 ms delay after review: "The test would be more reliable waiting for a concrete signal … or simply relying on Playwright's built-in auto-retrying assertions." (Don't reach for `networkidle` as the fix — see the next bullet.)
 - **Don't wait for `networkidle`** — discouraged in the official Playwright docs ([reference](https://playwright.dev/docs/api/class-page#page-wait-for-load-state-option-state)). Use `load` or wait for a specific element / response (review feedback on #1073).
 - Prefer locator-based assertions (`expect(page.getByRole('button', { name: 'Save' })).toBeVisible()`) over CSS selectors.

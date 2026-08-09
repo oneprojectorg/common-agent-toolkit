@@ -1,6 +1,6 @@
 ---
 name: access-control
-description: Authorization, permissions, roles, admin checks, authz, gating, and locking down endpoints — via the access-zones library and our wrappers (assertProfileAccess, assertOrgAccess, assertProfileAdmin, getProfileAccessUser, AccessBoundary, AccessTierError) across zones profile, decisions, admin. Use when adding a permission check, making an endpoint or mutation admin-only, gating a button or UI by role, wiring authz on a tRPC procedure / server action / route, hiding or showing components by permission, or handling the public/anonymous caller (AccessUser | undefined).
+description: Authorization, permissions, roles, admin checks, authz, gating, and locking down endpoints — via the access-zones library and our wrappers (assertProfileAccess, assertOrgAccess, assertProfileAdmin, getProfileAccessUser, AccessBoundary, AccessTierError) across zones profile, decisions, admin. Order OR'd grant checks so the broadest (admin) short-circuits before any lookup that can throw, and make an authorization path fail with UnauthorizedError rather than propagating a NotFoundError from an internal lookup. Use when adding a permission check, making an endpoint or mutation admin-only, gating a button or UI by role, wiring authz on a tRPC procedure / server action / route, hiding or showing components by permission, or handling the public/anonymous caller (AccessUser | undefined).
 ---
 
 ## The library
@@ -146,6 +146,26 @@ Two distinct error types model the two failure modes:
 - **`AccessTierError`** — the caller couldn't even reach the endpoint at its declared tier (e.g. no-JWT request hitting a `networkAuthenticatedProcedure`). Thrown by the tier middlewares. Carries `callerTier: 'none' | 'anon' | 'user' | 'network'`. Status code is 401 when `callerTier === 'none'`, else 403.
 
 When wrapping `access-zones` calls in feature code, **rethrow `AccessControlException` as `UnauthorizedError`** so Common owns the error model (review feedback on #1245). Don't let external library exceptions leak into your service signatures — Common error types are what the API surface and the client error boundaries expect.
+
+## Order the grant checks so the broadest one short-circuits first
+
+An authorization expression that ORs several grants together evaluates them all unless you stop it. When one of those grants needs a *lookup* to compute — and that lookup can throw — a caller who was already authorized by a cheaper grant gets an error instead of their data.
+
+```ts
+// ❌ getPhaseReviewSettings() runs for admins too, and throws NotFoundError
+//    when currentStateId names a phase that no longer exists.
+const openReviewsForReviewers =
+  instance.access.review && instance.currentStateId != null &&
+  getPhaseReviewSettings({ instance, phaseId: instance.currentStateId }).openReviews;
+
+// ✅ Admins never reach the phase lookup.
+const openReviewsForReviewers =
+  !instance.access.admin && instance.access.review && …
+```
+
+PR #1694: profile admins receive `ALL_TRUE_ACCESS` (so `review: true` is set for them too), which pulled the admin path into a phase-settings resolution it never needed. "An admin accessing this endpoint when `currentStateId` is set to a stale or unrecognised phase ID would now receive an unexpected 'Phase not found' error rather than the allowed read."
+
+**And an authorization path must fail with an authorization error.** Adding the admin short-circuit fixed admins but left the same throw live on the reviewer branch — a non-admin reviewer on an instance whose `currentStateId` points at a removed phase got `NotFoundError('Phase', phaseId)`, which surfaces to the client as a 404 on a valid proposal id: "clients receiving that error would interpret it as 'proposal not found' rather than 'access denied'." When a lookup inside an authorization decision can fail for reasons unrelated to the caller's identity, treat the failure as *no grant* (fall through to the deny path and its `UnauthorizedError`), not as a propagated `NotFoundError`. PR #1694 follow-up.
 
 ## Frontend — gating UI
 

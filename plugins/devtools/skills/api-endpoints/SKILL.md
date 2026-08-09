@@ -1,6 +1,6 @@
 ---
 name: api-endpoints
-description: How to add or change a tRPC API endpoint in services/api — one procedure per file merged with mergeRouters, the 4-tier procedure model (networkAuthenticatedProcedure / authenticatedConfirmedProcedure / authenticatedProcedure / openProcedure), Zod .input() from @op/common/client schemas, .output() via encoders, schemas live in @op/common (never hand-rolled DTOs), types consumed via @op/api/encoders (never RouterOutput), thin routers that delegate to @op/common services, and realtime channel registration instead of manual invalidation. Use when adding/editing a query or mutation, a router, an encoder, picking the right procedure factory, or wiring auth/channels.
+description: How to add or change a tRPC API endpoint in services/api — one procedure per file merged with mergeRouters, the 4-tier procedure model (networkAuthenticatedProcedure / authenticatedConfirmedProcedure / authenticatedProcedure / openProcedure), Zod .input() from @op/common/client schemas, .output() via encoders, schemas live in @op/common (never hand-rolled DTOs), types consumed via @op/api/encoders (never RouterOutput), thin routers that delegate to @op/common services, and realtime channel registration instead of manual invalidation. Input-schema traps — an optional id-like string needs .min(1) or '' collides with a NULL sentinel, and narrowing an output enum breaks decode of existing rows without a .catch() fallback. Use when adding/editing a query or mutation, a router, an encoder, writing or tightening an input schema, picking the right procedure factory, or wiring auth/channels.
 ---
 
 ## Where things live
@@ -113,6 +113,17 @@ import { collectionSchema, createCollection } from '@op/common';
 ```
 
 **Evolve existing input schemas additively.** A new field on an already-shipped input schema should be optional, and its JSDoc/comment must state what an *absent* value means so pre-existing callers and data keep working through a defined fallback. PR #1532: `'x-phase'?: string` — "When absent, the form applies to the process's initial (submission) phase"; `getForProfile` added optional `phaseId` / `initialPhaseId` documented as legacy, phase-agnostic behavior. Don't make a new field required (it breaks old callers) or leave empty-value semantics implicit.
+
+**An optional id-like string input needs `.min(1)` — `''` is not "absent".** `z.string().optional()` accepts the empty string, which then flows into the query as a real value: `WHERE phase_id = ''` instead of `IS NULL`. Where the column uses NULL as a sentinel and a `COALESCE(phase_id, '')` unique index, the two representations collide in the index but not in the application — `COALESCE('', '') = COALESCE(NULL, '') = ''`, so an insert hits `ON CONFLICT DO NOTHING` against the existing NULL row while the follow-up `WHERE phase_id = ''` finds nothing and throws a spurious `NotFoundError`. The read and delete siblings fail the same way, silently returning zero rows / `{ removed: false }`.
+
+```ts
+phaseId: z.string().min(1).optional(),   // ✅ absent means absent
+phaseId: z.string().optional(),          // ❌ '' sneaks past as a distinct value
+```
+
+PR #1679 shipped this across `addCategoryReviewer`, `removeCategoryReviewer`, and `listCategoryReviewers` — **when you tighten one, tighten every sibling procedure over the same column in the same PR.** PR #1690 then folded the tightened field into the shared schema so new endpoints inherit it.
+
+**Narrowing an enum on an output encoder is a data-compatibility change, not a cleanup.** Dropping retired values from a `z.enum([...])` makes every pre-existing DB row carrying one of them fail to decode at `.parse()` — a 500 on read, not a validation warning. Before you narrow, either confirm no production row holds the retired value or give the field a `.catch()` fallback the way sibling fields do. PR #1666: "Safe to merge **if** the team can confirm no production rows carry `reviewsPolicy: 'self_selection'` or `'random_assignment'`; those rows would now fail to decode since `config` has no `.catch()` fallback … the test helpers did create such rows against a real database, and the old API accepted them as valid inputs."
 
 **Mirror a sibling endpoint's filter schema instead of re-listing filters.** When a new endpoint is a sibling of an existing one over the same data (a map alongside a list, an export alongside a table), derive its input from the sibling's filter schema minus the pagination fields (`.omit({ cursor: true, limit: true })`) rather than hand-listing the filters again. PR #1553 self-review: input mirrors `proposalFilterSchema` minus `cursor`/`limit`, so the map applies the same category/status/ballot filters the list does — keeps the two from silently drifting out of filter parity.
 
