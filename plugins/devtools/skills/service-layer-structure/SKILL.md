@@ -1,6 +1,6 @@
 ---
 name: service-layer-structure
-description: How to organize a feature's service layer in packages/common/src/services/<feature>/ — one file per operation (createX / getX / listX / updateX / deleteX), all named exports, named-params object signatures, auth-assert first, transactions with advisory locks for concurrent ops, Common errors only. Plus the auxiliary file conventions — schemas.ts (Zod + DTO types), constants.ts (shared limits + security allowlists), utils.ts (pure helpers), <feature>Auth.ts (domain assertions that return useful context), channelScope.ts (realtime fan-out helpers), and ordering.ts (sort-key utilities). Cursor pagination rules — always include an id tie-breaker so rows that share a sort-key timestamp don't get skipped, and gate the cursor on `cursorValue != null` so falsy-but-valid sort values (e.g. rubric score 0) keep paging. Use when adding a new service operation, adding a new feature directory under @op/common, organizing helpers around a service file, designing a paginated listX, deciding where a piece of logic belongs, or writing a transaction.
+description: How to organize a feature's service layer in packages/common/src/services/<feature>/ — one file per operation (createX / getX / listX / updateX / deleteX), all named exports, named-params object signatures, auth-assert first, transactions with advisory locks for concurrent ops, Common errors only. Plus the auxiliary file conventions — schemas.ts (Zod + DTO types), constants.ts (shared limits + security allowlists), utils.ts (pure helpers), <feature>Auth.ts (domain assertions that return useful context), channelScope.ts (realtime fan-out helpers), and ordering.ts (sort-key utilities). Cursor pagination rules — always include an id tie-breaker so rows that share a sort-key timestamp don't get skipped, and gate the cursor on `cursorValue != null` so falsy-but-valid sort values (e.g. rubric score 0) keep paging. Concurrency and API-surface rules — re-assert every gate inside the writing statement's WHERE (a JS-only check is a TOCTOU window) and give the concurrent-failure path its own error message; log a warning when an "impossible" branch fires instead of skipping silently; re-export by name rather than `export *` when only one symbol should be public. Use when adding a new service operation, adding a new feature directory under @op/common, organizing helpers around a service file, designing a paginated listX, writing a guarded update, adding to a barrel index.ts, deciding where a piece of logic belongs, or writing a transaction.
 ---
 
 The service layer in `packages/common/src/services/<feature>/` is the home of the business logic that tRPC routers thinly wrap. Conventions here are the most consistent in the codebase — reviewers spot deviations quickly.
@@ -131,6 +131,31 @@ await db.transaction(async (tx) => {
 - Sort the ids before taking locks. Two operations holding the same sort order can't form a cycle.
 - Pull lock helpers into the feature's `ordering.ts` (or equivalent) — don't open-code `pg_advisory_xact_lock`.
 - If two services share lockable resources, the lock helper lives in the lower-level service and the higher-level service imports it.
+
+## Re-check every gate inside the write, not just in JavaScript
+
+A precondition checked in JS and enforced by a later `UPDATE` has a window between them. Anything that can change concurrently — a phase advancing, a state transitioning, a row being claimed — must be re-asserted in the **same statement** that writes, as an extra `WHERE` predicate (or a `NOT EXISTS` / lateral subquery when the condition lives on another table). Then treat "zero rows updated" as the concurrency failure.
+
+PR #1703: `updateReview` checked `canEditSubmittedReview` (the assignment's phase must still be the instance's current phase) in JS, but the atomic `WHERE` only guarded `state = SUBMITTED`. "If the instance advances to the next phase in the gap between the JavaScript check and this `UPDATE`, the write succeeds — a reviewer could sneak in one final edit after the review phase is officially closed. The doc-comment on the function promises the review is frozen once the phase advances, so this is a violated contract."
+
+When the JS check and the SQL guard both exist, they fail for **different reasons — give them different error messages.** The JS path means "this was never in an editable state"; the empty-result path means "it was, and something changed underneath us." Reusing one message makes a production incident unreadable. PR #1703: reaching the second path warrants its own `ValidationError('Review state changed concurrently; please refresh and try again')`.
+
+## Don't let an "impossible" branch skip silently
+
+A guard for a case the caller supposedly makes unreachable still needs a `logger.warn` when it fires — otherwise the branch reproduces exactly the bug it was written to prevent, and leaves no trace to diagnose it. Split the genuinely-expected case from the shouldn't-happen case so they're distinguishable in the logs. PR #1677: `reconcileCategoryRename` returned early on a missing new taxonomy term with no log line, so "the result is exactly the orphaning bug this PR fixes: `instanceData` now holds the new label but all existing proposal links still target the old term. At minimum the missing-new-term case should emit a warning so the condition is diagnosable in production." An absent *old* term, by contrast, is normal (nothing was ever tagged) and needs no log.
+
+See the `code-conventions` skill for level selection — an expected-but-recoverable absence is `warn`, not `error`.
+
+## Barrel exports widen the public API — re-export by name when only one symbol should be public
+
+`export * from './someFile'` promotes **everything** that file exports, not the one symbol you needed. A side-effecting internal (`ensureProposalTaxonomyTerms`) becoming reachable from `@op/common` is a real API-surface change hiding inside a one-line diff. When a file holds a mix of public and package-internal exports, use a named re-export in `index.ts`:
+
+```ts
+export { categoryTermUri } from './proposalTaxonomy';   // ✅ intentional surface
+export * from './proposalTaxonomy';                     // ❌ also exports the internals
+```
+
+PR #1676 review. Related, from PR #1680: when you *do* promote a helper whose correct use depends on a caller contract the types can't express (e.g. "callers must intersect this with the eligibility set first"), say so in its JSDoc — a publicly-exported footgun is worse than a private one.
 
 ## Parallel work
 

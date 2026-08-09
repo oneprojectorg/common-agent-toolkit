@@ -1,11 +1,27 @@
 ---
 name: i18n-strings
-description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, or any string a user will see; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Accessibility-facing strings (aria-label, textValue, placeholder, title) count as user-facing and must go through t() too. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
 ---
 
 ## Rule
 
 Every user-facing string goes through translation. Never hardcode display text.
+
+## "User-facing" includes the strings the user never sees
+
+The visible label is the easy half. The accessibility-facing and assistive-tech-facing attributes are user-facing too, and they're the half that gets missed — a screen-reader user gets English no matter their locale, and the visible label being correctly wrapped makes the gap invisible in review. Wrap **all** of these:
+
+- `aria-label`, `aria-description`, `aria-valuetext`
+- `textValue` (React Aria uses it for typeahead), `placeholder`, `title`, `alt`
+- Toast titles and descriptions, empty-state copy, validation messages
+
+PR #1654: "`aria-label` prop values and the `textValue` strings are hardcoded English … Because `aria-label` is consumed directly by screen readers and `textValue` drives typeahead in React Aria, non-English users relying on assistive technology will always see the English copy. The visible `label` correctly uses `<TranslatedText>`, but the accessibility-facing attributes were missed." When only these attributes need `t()`, calling `useTranslations()` in a file that otherwise renders `<TranslatedText>` is fine — it doesn't force a `'use client'` directive that wasn't already there.
+
+## Hooks translate their own copy
+
+A React hook can call `useTranslations()` directly — so a hook that raises a toast owns translating that toast. Don't leave the copy hardcoded in the hook "because it isn't a component." PR #1674: `useFileUpload` shipped `"That didn't work"` and `'Something went wrong on our end. Please try again'` as raw English toast strings; the fix wrapped them with the hook's own `useTranslations()`, matching `useProfileImageUpload` in the same PR.
+
+Translate **every** string that lands in the same surface. The same PR also wrapped the two `validateFile` descriptions, because a translated title over an untranslated description is a mixed-language toast — worse than either alone.
 
 ## Client components
 
@@ -75,6 +91,20 @@ Never render a raw upstream / library / API error string to the user — it's un
 2. Add `"New string": "New string"` to `en.json`.
 3. Add a translation for **every other `.json` file** in `apps/app/src/lib/i18n/dictionaries/`. List them with `ls apps/app/src/lib/i18n/dictionaries/` so you don't miss one when the locale set changes. Translate the value into the target language; keep the key identical to the English source. Don't leave a locale missing or stubbed with the English string.
 4. **Keep key order in sync across every locale file.** Put new keys in the same position — one contiguous block — in every `.json`, not appended in random order per file, so the dictionaries diff side by side. PR #1480 review: "a nit here.. it's nice to keep the languages in sync in terms of order of keys so they can be easily compared."
+
+### A missing key degrades silently — and worst on the invisible strings
+
+`next-intl` returns the **raw key string, with no ICU interpolation**, for a key it can't find. So `t('Remove {name}', { name })` on an unregistered key renders the literal `Remove {name}` — braces and all — in every locale including English. When the string is an `aria-label`, nothing on screen looks wrong; only a screen-reader user hits it. PR #1683 shipped exactly that: "the `Remove {name}` aria-label is passed to `t()` as a lookup key, but the key is absent from all seven dictionary files including `en.json` … every reviewer chip's remove button exposes the literal text 'Remove {name}' to screen readers across all locales — a real accessibility defect shipped with the feature."
+
+Before you open the PR, grep each new key back out of `en.json` and confirm the count of dictionary files carrying it matches `ls apps/app/src/lib/i18n/dictionaries/ | wc -l`.
+
+### Delete the keys your change orphaned
+
+Removing or replacing UI means removing its dictionary keys — in **every** locale file, in the same PR. Dead keys mislead translators and hide which copy is live. PR #1682 review: the "Coverage" radio group was replaced by a "Scope" section but `"How should proposals get distributed to reviewers?"`, `"Full coverage"`, and `"Every reviewer scores every proposal"` "remain across all 7 language dictionaries." PR #1684 was the follow-up cleanup: a codebase-wide search confirmed no remaining references, then the keys came out of all seven files at once.
+
+## Composing strings: don't hardcode the separator
+
+Joining a list with a literal `', '` bakes an English punctuation convention into every locale — Arabic and several others use a different list separator. When you render a joined list, either build it through the i18n layer (`Intl.ListFormat` with the active locale) or render the items as discrete elements and let CSS space them. PR #1689 review: `AssignedCategoriesSuffix` "joins category names with a hardcoded `, ` — worth a follow-up for Arabic and other locales where a different list separator applies."
 
 ## Don't
 

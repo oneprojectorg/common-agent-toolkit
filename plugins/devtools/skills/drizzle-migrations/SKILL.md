@@ -1,6 +1,6 @@
 ---
 name: drizzle-migrations
-description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), and use $inferSelect for row types. Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
+description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), use $inferSelect for row types, and always give findFirst a filter that identifies exactly one row (a non-unique column silently returns the wrong one). Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
 ---
 
 ## Where things live
@@ -97,6 +97,23 @@ where: {
 ```
 
 Live references: `packages/common/src/services/profile/listUserInvites.ts:25-28` (`isNotNull` + spread-conditional) and `listProfileUserInvites.ts:30` (`isNull`).
+
+### `findFirst` on a non-unique column needs a disambiguating filter
+
+`findFirst` returns whichever row the planner hands back first. That's only deterministic when the `where` narrows to at most one row — so if you're filtering on a column with no unique constraint, add the predicate that actually identifies the row you want (a status, a soft-delete flag, an explicit `orderBy`). The failure is silent: the query succeeds, returns a real row, and the operation quietly acts on the wrong one.
+
+```ts
+// ❌ profileId isn't unique on processInstances — an archived DRAFT can win.
+db.query.processInstances.findFirst({ where: { profileId } })
+
+// ✅ Name the row you mean.
+db.query.processInstances.findFirst({
+  where: { profileId, status: ProcessStatus.PUBLISHED },
+  columns: { id: true },
+})
+```
+
+PR #1658: without the status filter "a non-published instance (e.g. an archived DRAFT) could be returned first since `profileId` has no unique constraint, causing the backfill to silently skip while the live instance is never reached." Check the sibling that already does it right — `backfillReviewAssignments.ts` carried the filter; the new workflow didn't.
 
 ### Project only the columns you need
 
