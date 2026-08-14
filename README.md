@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 20 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
+One install gives engineers the full agent harness for this codebase: 21 in-house skills, a vendored copy of Vercel's `react-best-practices` skill, and the protected-branch hooks.
 
 ## Install
 
@@ -56,6 +56,7 @@ Then commit the resulting diff.
 | `release` | Open the dev → main release PR (invokable as `/release`). |
 | `service-layer-structure` | How to organize `packages/common/src/services/<feature>/` — one file per operation, named-params signatures, auth-assert first, transactions with sorted-id locks, re-asserting every gate inside the writing statement's `WHERE`, cursor pagination with an id tie-breaker and a null-safe `cursorValue != null` gate, named re-exports over `export *`, and the `<feature>Auth.ts` / `channelScope.ts` / `schemas.ts` / `constants.ts` / `utils.ts` auxiliary-file conventions. |
 | `test-conventions` | Vitest vs Playwright layout, `.test.ts` vs `.spec.ts`, the E2E env shim, `describeAccessTierGating`, stable selectors over structural DOM traversal, test helpers that throw like production, and choosing which kind of test to add. |
+| `technical-writing` | Writing prose in ASD-STE100 Simplified Technical English — sentence and paragraph limits, active voice with a named actor, simple tenses, one word per meaning, and the banned filler phrases ("It is important to note", "Crucially", "not just X, it is also Y"). Applies to READMEs, doc pages, runbooks, release notes, skill bodies, help text, and error messages. |
 | `vercel-react-best-practices` | Vendored from [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) — React/Next.js performance rules. MIT-licensed; refreshed via `scripts/sync-vercel.sh`. |
 | `workspace-shortcuts` | `pnpm w:*` shortcuts for running commands inside a specific workspace. |
 
