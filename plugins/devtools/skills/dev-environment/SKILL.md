@@ -1,6 +1,6 @@
 ---
 name: dev-environment
-description: Local dev stack — pnpm docker:dev vs workspace dev servers, port layout (localhost:3100 app, :3101 API, :3121–3123 Supabase, Mailpit, Storybook), and .env.local vs .env.docker. Use when starting the stack, debugging an unreachable service, opening the app in a browser, or picking which port to hit.
+description: Local dev stack — pnpm docker:dev vs workspace dev servers, port layout (localhost:3100 app, :3101 API, :3121–3123 Supabase, Mailpit, Storybook on :3600 via pnpm w:sense dev), and .env.local vs .env.docker. Covers the gotchas that look like app bugs but aren't — Storybook needing one pnpm build on a clean checkout because @op/styles resolves to a generated dist, and `Cannot find module '@swc/helpers-<hash>'` meaning a stray lockfile above the monorepo moved Turbopack's inferred workspace root. Use when starting the stack, debugging an unreachable service, running Storybook, opening the app in a browser, writing or fixing a bootstrap version guard, or picking which port to hit.
 ---
 
 ## Two ways to run the stack
@@ -27,8 +27,10 @@ Storybook and email previews run as separate workspace dev servers (not in the d
 
 | Service | Port | Command |
 |---|---|---|
-| UI Storybook | 3600 | `pnpm w:ui dev` |
+| `@op/sense` Storybook | 3600 | `pnpm w:sense dev` |
 | Email previews | 3883 | `pnpm w:emails dev` |
+
+**Storybook on a fresh clone needs one build first.** `pnpm w:sense dev` / `build` call Storybook directly, and `@op/styles` resolves to a generated `dist/styles.css` that doesn't exist on a clean checkout — you get `Failed to resolve entry for package "@op/styles"`. Run `pnpm build` once, or let CI's `turbo build --filter=@op/sense` compile the dependency first. This was a real CI failure, found by a throwaway probe branch and fixed in PR #1782 by driving the Storybook build through turbo.
 
 ## Running multiple stacks side-by-side
 
@@ -68,6 +70,8 @@ A `200`/`307` means it's serving; anything else (especially `7`/`connection refu
 - **Migrations apply on docker stack boot** (via the api container) — so after `pnpm w:db generate`, restart the docker stack to pick up new SQL. Don't `pnpm w:db migrate` manually; it's denied (see `drizzle-migrations`).
 - **`pnpm dev` vs `pnpm w:app dev`** — root `pnpm dev` runs `turbo dev` for everything in parallel; the workspace shortcut runs a single app. Prefer the shortcut unless you genuinely need everything.
 - **Stack memory budget** — the full docker stack steady-states at ~6–8 GB RAM (DinD + ~12 Supabase sub-containers + Next.js + API + Redis). Give Docker enough headroom.
+- **`Cannot find module '@swc/helpers-<hash>/...'` is a workspace-root problem, not an app bug.** Turbopack infers the workspace root by walking up for lockfiles. If any lockfile exists *above* the monorepo — classically from an `npm install` run in `$HOME` — the inferred root moves and Turbopack emits externals symlinks under `.next/dev/node_modules` at the wrong relative depth. It surfaces at runtime as a missing module, which reads like a broken build. The repo's own `pnpm-lock.yaml` is at the root, so a clean checkout resolves correctly; the failure is machine-specific. Check for a stray lockfile above the repo before debugging the app. Next's documented remedy is pinning `turbopack.root` in `next.config.mjs` (PR #1750 research thread, extracted to #1787).
+- **A version guard must match the declared range at both ends.** A bootstrap script checking `NODE_MAJOR >= 24` accepts Node 25+ even when the manifests constrain the repo to `24.x`, so a developer runs host-side pnpm commands outside the declared runtime and gets unsupported-engine warnings. Write the guard as an equality against the declared major (`-eq 24`), and change every bootstrap script together — there is one per platform. PR #1771.
 - **Documenting a new env var** — any env var the app or build reads must be added to `.env.local.example` (and any sibling env examples), with a short note on when it applies (e.g. build-time / deploy-only). PR #1521 review: `POSTHOG_API_KEY` / `POSTHOG_ENV_ID` were read but undocumented in every example — add them with a build-time/deploy-only note so nobody has to reverse-engineer them from the code.
 
 ## When the dev server is misbehaving
