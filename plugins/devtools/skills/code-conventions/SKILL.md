@@ -1,6 +1,6 @@
 ---
 name: code-conventions
-description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, explicit String() casts when comparing across a library boundary, resolving or explicitly deferring debt a migration carries over (debug code, dropped guards) rather than porting it in silence, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
+description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles — disclosing the bundling in the PR body is not a substitute for unbundling, and naming the upstream cause when you patch a call site), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), one type guard at the boundary instead of an `as` per property hop, `as const` is a const assertion and NOT a type assertion (don't let a review bot talk you into removing it — rebut with load-bearing evidence and precedent counts), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, validation errors that name the field and blame the right party (never leak an array index as a field name, never reject the user's input for a misconfiguration only an admin can fix) and diagnostics that don't read domain meaning into generic constructs, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, explicit String() casts when comparing across a library boundary, resolving or explicitly deferring debt a migration carries over (debug code, dropped guards) rather than porting it in silence, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
 ---
 
 These are the recurring themes in `oneprojectorg/common` PR reviews. None are domain-specific to a single skill — they apply to every file the agent touches. Skip them at your peril; reviewers will catch them.
@@ -13,6 +13,22 @@ The PR has one job. The job is the Asana task. That's it.
 - A bug fix doesn't ship a refactor; a refactor doesn't ship a feature. The rare exception is a **trivial** change that genuinely unblocks the work (e.g. a one-line docker-compose tweak) — note it in the PR description.
 - When you see complexity that wants fixing but isn't your task ("this file needs a refactor"), file a follow-up Asana task or open a separate PR. Don't expand scope mid-flight.
 - `/investigate` or `/autoplan` flagging adjacent issues? Open follow-ups; merge the focused fix. PR #1122 / #1208 / #1158 all closed with explicit "follow-up tracked" notes for the bigger refactor reviewers spotted.
+
+### Disclosing the bundling is not a substitute for unbundling
+
+The tempting move — "I'll flag it in the PR body rather than unbundle it" — does not clear the bar. PR #1750 (an export feature) carried a setState-in-render fix, a stale-template-cache fix, and a schema-validator diagnostic fix, all disclosed in the body as *"All four came out of debugging this feature. Flagging rather than unbundling."* The reviewer flagged each one anyway — *"This feels a bit unrelated to this PR … There are a few others like this in the PR that we should watch out for"* — and the outcome was three separate PRs (#1783, #1785, #1786). The disclosure bought nothing except a wider diff that no longer matched its title.
+
+**This is the failure mode agents are most prone to**, and the reason is structural: an agent driving one task fixes whatever blocks it, because deferring means a new branch and another review cycle for something it has already diagnosed. Every bundled change in #1750 was hit *en route* to exercising the feature — you can't export proposals without first creating a decision, a proposal, and a rubric.
+
+So when you fix something you tripped over rather than something you set out to fix:
+
+- **Split it out as you go**, on its own branch off `dev`, while the change is small and independently revertible — which is exactly what makes extraction cheap and what makes leaving it in look lazy.
+- The exception is genuinely trivial and genuinely load-bearing for the work: a one-line docker-compose tweak without which nothing runs. "It was broken and I knew how to fix it" is not that.
+- If you truly can't unbundle, the PR body has to say which commit carries it and why extraction was rejected — not just that bundling happened.
+
+### Fix the cause, or say plainly that you didn't
+
+When the honest fix is upstream and you patch the call site instead, name the upstream cause in the code comment and file it. PR #1750 patched a `Template with ID '<uuid>' not found` failure by switching a cached `ensureData` to a revalidating `fetch`; the reviewer's instinct went straight past it — *"I wonder if it matters much since they won't change but we might get new ones. Or if the problem is further up where we query by name instead of id."* It was: the seed dedupes templates on **name** while regenerating the **id**, so a logically identical row gets a new id on every seed. The call-site fix is defensible (a data-layer identity change is out of scope for a feature PR); the silence about it would not have been.
 
 ## Composition over duplication
 
@@ -105,7 +121,7 @@ Names should carry domain meaning. `Item`, `Row`, `Card` (alone) are red flags i
 - ✅ `ProposalReviewCard`, `BallotEntryRow`, `CollectionItem`
 - ❌ `Item`, `Card`, `Box`, `Container`
 
-Exception: truly-generic primitives in `@op/ui` / `@op/sense` (`<Card>`, `<Button>`) — those are the leaves and earn the generic name.
+Exception: truly-generic primitives in `@op/sense` (`<Card>`, `<Button>`) — those are the leaves and earn the generic name.
 
 ## Type discipline
 
@@ -121,6 +137,20 @@ Exception: truly-generic primitives in `@op/ui` / `@op/sense` (`<Card>`, `<Butto
 Recurring review on JSON: "I feel like this `Record<string, unknown>` is really seeping into our code a lot and I don't think it's necessary that it's unknown. The JSON type in the database wasn't meant to be untyped as much as it is meant to simply not be typed at the database level."
 
 - **Fix the *source* type, not each consumer.** When a hook returns a ref, type it as `RefCallback<T>` (or the exact `RefObject<T>`) so call sites put the ref straight on the element — delete the `as React.RefObject<HTMLDivElement>` casts rather than papering over ref typing at every use site. PR #1558 self-review: the hook now returns a properly typed `RefCallback<T>`, so every `as React.RefObject<HTMLDivElement>` cast at the call sites is deleted and the ref goes straight onto the element.
+- **One type guard at the boundary beats an `as` per access.** Traversing an untyped structure (a React Query cache entry, a parsed JSON blob) tends to grow one assertion per property hop. Write a single narrowing predicate — `const isRecord = (value: unknown): value is Record<string, unknown> => …` — and bind the leaf behind a `typeof` check, so future shape changes stay compiler-checked. PR #1770 replaced four object assertions with one `isRecord`, leaving no `as` in the file besides `as const`. **Take the tests with it**: the same PR dropped seven `as ReturnType<typeof …>` casts and asserted the whole returned shape instead, which tightened three tests that had been silently ignoring a second row.
+
+### `as const` is not a type assertion — don't "fix" it
+
+`as Foo` suppresses a check; `as const` **narrows** a literal instead of widening it to `string`. They share a keyword and nothing else. Review bots conflate them — Greptile flagged `method: 'manual' as const` in an e2e fixture as a convention violation in #1788 and again in #1797 — but the rule targets suppression casts, and removing the const assertion would widen the literal until it no longer satisfies a `'date' | 'manual'` union.
+
+The wider lesson is how that thread was closed, because it's the model for any convention flag you think is wrong:
+
+- **Name the distinction** — const assertion vs suppression cast — rather than asserting "this one's fine."
+- **Show it's load-bearing** — drop it and the type no longer checks.
+- **Count the precedent** — `as const` appeared 32 times across `tests/e2e`, four of them already on `dev` in the same file, so changing 2 of 32 would make the suite *less* consistent.
+- **Concede the good half separately.** The reviewer's underlying suggestion (annotate the fixture with the process-schema type so the literals are contextually typed) was a real improvement — acknowledged, and deferred to its own PR rather than folded into a feature branch.
+
+Greptile accepted the correction outright. A bot finding is evidence, not a verdict; a documented rebuttal is a valid resolution and cheaper than a wrong change.
 
 ### Cast at the boundary, not at the consumer
 
@@ -206,6 +236,8 @@ The `@op/common` package exports a Common error hierarchy in `packages/common/sr
 - **Don't throw raw `Error`** from services — the router has no way to map it to a status code. PR #1017 fixed an inviteUser bug where the service threw `new Error(...)` and the router was string-matching to recover.
 - **Rethrow external library exceptions** as Common errors. `access-zones` throws `AccessControlException`; the assertion wrappers in `services/assert` already rethrow it as `UnauthorizedError` — don't let the library type leak into your service signatures.
 - **Don't catch-and-rethrow** in routers. The tRPC error formatter handles Common errors directly. A `try` / `catch` in a router is almost always wrong (PR #1017).
+- **A validation error names the field, and blames the right party.** Two defects that shipped together in the same message (PR #1786, extracted from #1750): submitting a proposal could fail with `0 is invalid` — the `0` was an array index leaking out, because the formatter took the last segment of AJV's `/category/0` path as the field name and fell through to the index when `properties["0"]` didn't exist. And the actual cause was a *configuration* fault: two categories sharing one label make the `oneOf` branch ambiguous, so every proposal choosing that option fails on every attempt until an admin removes the duplicate. Reporting it as an invalid *selection* sends the one person who cannot fix it back to re-pick a value that can never validate. Say which field, and when the fault is upstream of the user, say that instead of rejecting their input.
+- **Don't read domain meaning into a generic construct.** The same formatter assumed `oneOf` / `const` / `uniqueItems` always describe configured selection options, so any custom form, rubric, or phase-settings schema using those keywords for ordinary data got told it had invalid or duplicate options — a confident diagnosis pointing at the wrong remediation. If a shared validator accepts arbitrary schemas, key your diagnostics on something that identifies *your* construct, and fall back to a generic message otherwise.
 - **Never a broad catch-all (`.catch(() => null)`) around a call that can throw for more than one reason.** When only one error is expected and recoverable (e.g. a `NotFoundError` from an assert helper when the row is legitimately absent), catch *that* narrowly and re-throw everything else. A catch-all also swallows transient failures (a DB hiccup) and lets the code fall through to wrong behavior with no error surfaced. PR #1633: `assertUserByAuthId(...).catch(() => null)` absorbed both the absent-row case *and* transient DB errors, so a short-lived hiccup silently skipped an access-filtering exclusion and returned an unfiltered list including proposals the caller must not see. Re-throw anything that isn't the expected `NotFoundError`.
 
 ## A migration is the moment to resolve carried-over debt, not to launder it

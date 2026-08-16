@@ -6,10 +6,10 @@
     "forbidden_terms": []
   },
   {
-    "query": "how do i build just the ui package without touching the rest of the monorepo",
+    "query": "how do i build just the design system package without touching the rest of the monorepo",
     "should_satisfy": true,
-    "expected_terms": ["w:ui", "pnpm"],
-    "forbidden_terms": []
+    "expected_terms": ["w:sense", "pnpm"],
+    "forbidden_terms": ["w:ui"]
   },
   {
     "query": "spin up the db workspace, generate a migration, then start the api dev server — sequence of commands",

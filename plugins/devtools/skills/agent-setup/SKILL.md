@@ -154,7 +154,9 @@ DB (import it once per workspace), then bind it to the agent.
 
 | Source | Skills |
 |---|---|
-| `github.com/oneprojectorg/common-agent-toolkit` (this repo, `plugins/devtools/skills/<name>`) | `access-control`, `api-endpoints`, `asana-api`, `branch-and-pr`, `code-conventions`, `component-file-structure`, `dev-environment`, `drizzle-migrations`, `i18n-strings`, `implement-task`, `op-ui-conventions`, `pickup-task`, `pr-description`, `realtime-channels`, `release`, `service-layer-structure`, `test-conventions`, `workspace-shortcuts` (18) |
+| `github.com/oneprojectorg/common-agent-toolkit` (this repo, `plugins/devtools/skills/<name>`) | `access-control`, `api-endpoints`, `asana-api`, `branch-and-pr`, `code-conventions`, `component-file-structure`, `dev-environment`, `drizzle-migrations`, `i18n-strings`, `implement-task`, `pickup-task`, `pr-description`, `realtime-channels`, `release`, `sense-conventions`, `service-layer-structure`, `test-conventions`, `workspace-shortcuts` (18) |
+
+If a workspace still has the old `op-ui-conventions` skill bound, it is stale — that skill was renamed to `sense-conventions` when `@op/ui` was deleted. Import the new one and unbind the old.
 | `github.com/garrytan/gstack` | `autoplan`, `investigate` (2) |
 | runtime built-ins (no import; shipped with the runtime) | `review` (gstack's review skill), `vercel-react-best-practices` (vercel-labs) (2) |
 

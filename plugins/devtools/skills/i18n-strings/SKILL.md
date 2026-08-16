@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Accessibility-facing strings (aria-label, textValue, placeholder, title) count as user-facing and must go through t() too. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Accessibility-facing strings (aria-label, placeholder, title, alt) count as user-facing and must go through t() too, and so do validation diagnostics composed in @op/common — the service layer has no useTranslations, so return a code the app maps to t() copy rather than a hardcoded English message. @op/sense components are i18n-agnostic and ship English defaults, so the app call site is the only place that can translate them. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
 ---
 
 ## Rule
@@ -12,10 +12,12 @@ Every user-facing string goes through translation. Never hardcode display text.
 The visible label is the easy half. The accessibility-facing and assistive-tech-facing attributes are user-facing too, and they're the half that gets missed — a screen-reader user gets English no matter their locale, and the visible label being correctly wrapped makes the gap invisible in review. Wrap **all** of these:
 
 - `aria-label`, `aria-description`, `aria-valuetext`
-- `textValue` (React Aria uses it for typeahead), `placeholder`, `title`, `alt`
+- `placeholder`, `title`, `alt`, and any string a component consumes for typeahead or filtering rather than display
 - Toast titles and descriptions, empty-state copy, validation messages
 
-PR #1654: "`aria-label` prop values and the `textValue` strings are hardcoded English … Because `aria-label` is consumed directly by screen readers and `textValue` drives typeahead in React Aria, non-English users relying on assistive technology will always see the English copy. The visible `label` correctly uses `<TranslatedText>`, but the accessibility-facing attributes were missed." When only these attributes need `t()`, calling `useTranslations()` in a file that otherwise renders `<TranslatedText>` is fine — it doesn't force a `'use client'` directive that wasn't already there.
+PR #1654: "`aria-label` prop values … are hardcoded English … Because `aria-label` is consumed directly by screen readers … non-English users relying on assistive technology will always see the English copy. The visible `label` correctly uses `<TranslatedText>`, but the accessibility-facing attributes were missed." When only these attributes need `t()`, calling `useTranslations()` in a file that otherwise renders `<TranslatedText>` is fine — it doesn't force a `'use client'` directive that wasn't already there.
+
+Sense components are i18n-agnostic by design — they take copy as props with English defaults and never call `t()` — so **the app is the only place that can translate them**. A missing `t()` at the call site ships the English default silently, with nothing in `packages/sense` to catch it.
 
 ## Hooks translate their own copy
 
@@ -71,6 +73,17 @@ import { useRouter } from 'next/navigation';
 The bare router strips the locale prefix on `router.push('/foo')` and the user lands on the default-locale page. Reviewer flag (PR #1145): "Should we import our i18n version of `useRouter`?"
 
 **Server-side redirects: thread the actual locale, don't hardcode a segment.** When you build a redirect / navigation URL by hand (a server utility, middleware — anywhere the i18n `useRouter` isn't available), never hardcode a locale segment like `/en/start`. Hardcoding `/en` sends a non-English user (e.g. at `/fr/decisions`) to the English page. The current locale is already the leading segment of `x-pathname` — extract it and build `/${locale}/start`. PR #1638: "`buildOnboardingRedirect` always returns `/en/start` regardless of the user's locale … the user's current locale is already available on `x-pathname` (it's the leading segment)."
+
+## A string written in `@op/common` is still user-facing if a user reads it
+
+The rule is usually stated as "wrap every string in `apps/app`", which quietly implies the service layer is exempt. It isn't. A validation diagnostic composed in `packages/common` and surfaced verbatim in a form error is English in every locale, and no dictionary check catches it because there's no `t()` to grep for. PR #1786 shipped a batch of new proposal / review / vote / custom-form / instance-update diagnostics that way: "these new user-facing validation messages are hardcoded in English, so … consumers display them untranslated in non-English locales."
+
+The service layer has no `useTranslations`, so pick one:
+
+- **Return a stable code plus structured params** (`{ code: 'DUPLICATE_OPTION_LABEL', field }`) and let the app map it to `t()` copy — the shape the app already uses for known error flags.
+- **Route the message through the app's translation layer** at the boundary that renders it.
+
+Either way the raw English string is a debugging detail, not the thing the user reads. See also `code-conventions` on naming the field and blaming the right party in a validation error.
 
 ## User-facing errors are localized copy, never the raw upstream message
 
