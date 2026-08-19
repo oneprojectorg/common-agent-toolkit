@@ -220,7 +220,7 @@ If the source is exported from a different package and importing it would pull i
 
 ## Comments — only where necessary, then keep them short
 
-The default is no comment, because comments decay. The code around a comment keeps changing and the comment doesn't, so every comment is a claim that will eventually be false while still reading as true — and a confidently wrong comment costs more than no comment. Code that needs a comment to be understood is usually code that should be renamed or split instead. Do that first; the comment stops being necessary.
+Comments decay so only include them when it is necessary and not obvious from the code. The code around a comment keeps changing and the comment doesn't, so every comment is a claim that will potentially be false in the future while still reading as true — and a confidently wrong comment costs more than no comment. Code that needs a comment to be understood is usually code that should be renamed or split instead. Do that first; the comment stops being necessary in a lot of cases.
 
 A comment earns its place in one case: **the reasoning is not obvious from the code and cannot be made obvious by writing the code differently.** That is a narrow set:
 
