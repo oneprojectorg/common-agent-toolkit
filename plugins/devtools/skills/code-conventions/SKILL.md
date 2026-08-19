@@ -1,6 +1,6 @@
 ---
 name: code-conventions
-description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles — disclosing the bundling in the PR body is not a substitute for unbundling, and naming the upstream cause when you patch a call site), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), one type guard at the boundary instead of an `as` per property hop, `as const` is a const assertion and NOT a type assertion (don't let a review bot talk you into removing it — rebut with load-bearing evidence and precedent counts), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, validation errors that name the field and blame the right party (never leak an array index as a field name, never reject the user's input for a misconfiguration only an admin can fix) and diagnostics that don't read domain meaning into generic constructs, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, explicit String() casts when comparing across a library boundary, resolving or explicitly deferring debt a migration carries over (debug code, dropped guards) rather than porting it in silence, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
+description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity), scope discipline (one task per PR, follow-ups not bundles — disclosing the bundling in the PR body is not a substitute for unbundling, and naming the upstream cause when you patch a call site), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), one type guard at the boundary instead of an `as` per property hop, `as const` is a const assertion and NOT a type assertion (don't let a review bot talk you into removing it — rebut with load-bearing evidence and precedent counts), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities (grep before writing), using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, validation errors that name the field and blame the right party (never leak an array index as a field name, never reject the user's input for a misconfiguration only an admin can fix) and diagnostics that don't read domain meaning into generic constructs, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, explicit String() casts when comparing across a library boundary, resolving or explicitly deferring debt a migration carries over (debug code, dropped guards) rather than porting it in silence, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII), comment restraint (comments decay, so the default is none — write one only when the reasoning is not obvious and cannot be made obvious by rewriting the code, then keep it to one short line), file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
 ---
 
 These are the recurring themes in `oneprojectorg/common` PR reviews. None are domain-specific to a single skill — they apply to every file the agent touches. Skip them at your peril; reviewers will catch them.
@@ -218,6 +218,34 @@ If the source is exported from a different package and importing it would pull i
 - Domain strings (`'yes'`, `'no'`, `'pending'`) that cross a boundary should be enum-backed or use a Zod literal union.
 - Don't hardcode UI strings — see the `i18n-strings` skill.
 
+## Comments — only where necessary, then keep them short
+
+The default is no comment, because comments decay. The code around a comment keeps changing and the comment doesn't, so every comment is a claim that will eventually be false while still reading as true — and a confidently wrong comment costs more than no comment. Code that needs a comment to be understood is usually code that should be renamed or split instead. Do that first; the comment stops being necessary.
+
+A comment earns its place in one case: **the reasoning is not obvious from the code and cannot be made obvious by writing the code differently.** That is a narrow set:
+
+- **Why**, not what: the reason for a non-obvious choice, a workaround, or an ordering constraint — including the option that looks right and was rejected.
+- A constraint that lives outside the file (an upstream bug, a provider quirk, a spec requirement).
+- A warning about a real footgun at a call site.
+
+Reasoning is the one thing that survives a refactor, which is why it's the one thing worth writing down. Anything describing *what the code does* is the part that decays first.
+
+When you do write one, write the shortest form that carries the information:
+
+- One line where one line works. No preamble, no restating the signature, no "This function ...".
+- No decorative banners, section dividers, or commented-out code.
+- No changelog narration (`// added in the refactor`, `// was previously X`) — that is what git history is for.
+- Delete a comment the code has outgrown. A stale comment is worse than none.
+
+Comments follow the `technical-writing` skill: active voice, simple tense, no filler.
+
+| Do not write | Write |
+|---|---|
+| `// Loop over the users and send each an invite` | *(nothing — the code says this)* |
+| `// This is a helper function that formats the display name for a profile` | *(nothing — the name says this)* |
+| `// Sort the array` | `// Stripe returns events unordered; sort before replaying.` |
+| `// We use setTimeout here because of a race condition that happens when the modal unmounts before the focus handler runs, so we defer it` | `// Defer focus: the modal unmounts before the handler runs.` |
+
 ## Errors — use Common error types
 
 The `@op/common` package exports a Common error hierarchy in `packages/common/src/utils/error/index.ts`:
@@ -287,7 +315,7 @@ Use `Explore` or `Grep` for two minutes before writing 30 lines.
 
 - **Don't bundle scope.** One PR, one task.
 - **Don't extract too early either.** A first occurrence is fine. Don't pre-compose for hypothetical second uses.
-- **Don't add comments that just restate the code.** Comments answer "why" questions, not "what" — the code says what it does.
+- **Don't add comments that just restate the code.** See *Comments* above — comment only where the code cannot carry the information, and keep it to one short line.
 - **Don't leave `// TODO: this is temporary` without an Asana follow-up.** Follow-ups land in the task tracker, not in TODOs.
 - **Don't pile flags onto a function.** When a function grows `includeDrafts?: boolean` plus `forAdmin?: boolean` plus `withReviews?: boolean`, compose call sites instead. PR #1084 review: "I like the composable approach more here because the choice is pretty specific to the use-case... not a big fan of the flags approach generally."
 - **Don't leave code the refactor orphaned.** When a component or asset stops being used after your change, delete it — don't leave it in the tree. PR #1517 self-review: the FullScreenSplit* components and the SideImage asset were only used by the old layout, so they're deleted.

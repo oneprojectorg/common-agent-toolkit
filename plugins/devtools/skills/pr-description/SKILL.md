@@ -1,9 +1,19 @@
 ---
 name: pr-description
-description: How to write a PR description in this repo — concise, lead with what and why in one paragraph (sometimes a few bullets), no test-plan checklist, no walk-through of the diff. Mermaid ERDs for schema PRs, stacked-PR references, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
+description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
 ---
 
-PR descriptions in this repo are **short**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
+PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
+
+The test for every sentence: **could the reviewer get this from the diff?** If yes, cut it. What survives is almost always **architectural** — the shape of the change rather than its contents:
+
+- A new or moved boundary (a procedure tier, a service split, a package dependency).
+- Data flow and ownership — who calls what, what now holds the state, what the source of truth is.
+- Schema shape and relationships.
+- Coupling the reviewer would otherwise have to infer, and migration or rollout order.
+- The constraint that forced the design, when the obvious approach was rejected.
+
+When that shape is easier to see than to read, draw it — a mermaid diagram is part of the description, not decoration. Everything else stays out.
 
 ## The default — one paragraph
 
@@ -27,9 +37,17 @@ That's the bar. One declarative sentence about what, one about why or consequenc
 
 A small set of cases earn extra structure. Don't reach for them by default — only when the PR genuinely needs them.
 
-### Schema / migration PRs — mermaid ERD
+### A mermaid diagram when structure is the point
 
-Embed a mermaid `erDiagram` block for any PR adding tables or changing relationships. PR #1186 is the model. Reviewers reviewing migrations read the ERD before the SQL.
+Draw the architecture when a diagram lands it faster than a paragraph. Pick the form that matches what changed, keep it to the nodes that changed plus their immediate neighbours, and don't diagram a change one sentence already covers.
+
+| Change | Diagram |
+|---|---|
+| Tables added, relationships changed | `erDiagram` |
+| A flow crossing services, jobs, or the client/server line | `sequenceDiagram` |
+| A new boundary, a moved responsibility, a rewired data flow | `flowchart` |
+
+An `erDiagram` is required, not optional, for any PR adding tables or changing relationships — reviewers read the ERD before the SQL. PR #1186 is the model.
 
 ````markdown
 <One-paragraph summary.>
@@ -80,6 +98,8 @@ When the follow-up is non-trivial, file an Asana task and link it — the PR sec
 
 - **No test-plan checklist.** Reviewers know what gates run and CI re-runs them. A `- [ ] pnpm typecheck` checklist is noise.
 - **No diff walk-through.** Reviewers read the diff. A bullet list that just enumerates "added X to file Y, added Z to file W" gets skimmed.
+- **No implementation narration.** Which hook you used, which helper you renamed, how many files moved — that's the diff's job. Describe the architecture the change lands in, not the steps that got it there.
+- **No decorative diagram.** A mermaid block that redraws what one sentence already said costs the reviewer more than it gives.
 - **No marketing copy.** "Comprehensive refactor", "unlocks a powerful workflow" — drop it. Be flat.
 - **No "Skipped locally" section.** If you're handing off a gate to CI, that's a process decision and doesn't need to be debated in the PR body. The implement-task skill governs when gates are required at task-completion time.
 - **No screenshots unless they actually clarify the change.** A modal that's "wider now" doesn't need a before/after; a layout shift that's hard to describe might.
@@ -103,4 +123,5 @@ Drop it on the last line. Reviewers click through to read the original task; the
 - **Don't paste an AI-generated summary** of the diff. Concise human framing beats verbose mechanical narration.
 - **Don't open a PR without the Asana link** — it's what makes the PR findable from the task tracker.
 - **Don't expand a Summary just to look thorough.** A one-line PR description for a one-line change is correct, not lazy.
+- **Don't leave an architectural change undescribed.** Short is the rule; silent is not. If the PR moves a boundary, changes who owns state, or reorders a migration, that belongs in the body even when the diff is small.
 - **Don't bury a Stacked-on PR** in the middle of the body. First line of the summary, or its own line above it.
