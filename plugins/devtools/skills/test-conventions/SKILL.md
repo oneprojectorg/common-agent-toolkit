@@ -1,6 +1,6 @@
 ---
 name: test-conventions
-description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, writing a test data helper that throws like production rather than no-opping, using a real parser instead of a hand-rolled reader in the assertion path, testing the intersection of two behaviours a change makes coexist rather than each half, keeping `as const` in fixtures (it is a const assertion, not a type assertion a review bot should strip), debugging a failing test, or fixing missing env vars in Playwright runs.
+description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, seeding through the service layer instead of hand-writing rows (Vitest calls @op/common directly via TestDecisionsDataManager; Playwright can't import it, so extend the shared @op/test factories rather than inserting per spec — and know which derived writes a raw insert skips), writing a test data helper that throws like production rather than no-opping, using a real parser instead of a hand-rolled reader in the assertion path, testing the intersection of two behaviours a change makes coexist rather than each half, keeping `as const` in fixtures (it is a const assertion, not a type assertion a review bot should strip), debugging a failing test, or fixing missing env vars in Playwright runs.
 ---
 
 ## Three test surfaces
@@ -46,6 +46,32 @@ When you write a test you can't summarize in a sentence, the test is probably te
 
 - Use the shared `testData.createProposal` / `createOrganization` / etc. helpers — don't reinvent setup. If a helper needs a new parameter (`status`), thread it through rather than building a parallel fixture.
 - Merge near-identical `it` blocks for performance. Reviewer (#1084): "Can we merge this into 'shows the creator their draft when viewing the phase it was created in' for performance?" Test setup is expensive; one `it` with two assertions is better than two `it`s with the same setup.
+
+## Seed through the service layer, not around it
+
+Reviewer note on #1799: **"Use the service layers in the e2e tests."** A row you insert by hand is a row production never wrote. The test then pins a shape the app doesn't produce — and the derived writes the service would have made are simply absent, so the spec exercises a path that doesn't exist in the product.
+
+**Vitest integration tests: call the real service.** `services/api/src/test/helpers/TestDecisionsDataManager.ts` is the pattern — *"Uses service-layer calls from @op/common to set up fixtures without tRPC/session overhead"* — importing `createProposal`, `createDecisionInstance`, `advancePhase`, `joinOrganization` from `@op/common` and calling them with a `user`. New fixtures for a service-layer or router test go through that manager, not through fresh `db.insert` calls.
+
+**Playwright e2e can't import `@op/common` today**, so it uses the shared `@op/test` factories in `tests/core/` (`createOrganization`, `createDecisionInstance`, `createProposal`, `createReviewScenario`, …). Two blockers, both recorded in the source: `packages/common` has no `"type": "module"`, which breaks CJS/ESM interop under Playwright's Node runtime (`tests/core/src/decision-data.ts`), and `@op/common` services import `db` from `@op/db/client`, whose first line is `import 'server-only'` — Vitest neutralises that with `vi.mock('server-only', () => ({}))` in its setup, and Playwright's runner has no equivalent. So in e2e the rule is one step removed: **seed through the shared factory, extend the factory when it lacks a field, and never hand-roll inserts in a spec.** A per-spec `db.insert` is the thing to push back on in review.
+
+**Know what the factory doesn't write.** These are the real gaps between `@op/test`'s factories and their `@op/common` counterparts, and each one has silently mis-scoped a spec:
+
+| Skipped by the raw insert | Consequence in the test |
+|---|---|
+| Title-derived unique slug (`generateUniqueProfileSlug`) | Slug/URL assertions pin `proposal-<uuid>`, a shape production never emits |
+| Phase-default `visibility: HIDDEN` | Specs patch it back with a follow-up `db.update` "simulating what createProposal does" |
+| `proposalCategories` link rows | A `category` set only inside the `proposalData` JSON is invisible to every read that joins the link table |
+| Location sync + boundary-category derivation | Map, location filter and district tagging find nothing |
+| `parseProposalData` validation, access asserts | The test creates data (and in phases) production would reject |
+| Per-instance `accessRoles` (`createDefaultDecisionRoles`) | The factory attaches the *global* seeded Admin role, so permission resolution takes a different branch and role pickers see zero process roles |
+| `decisionProcessTransitions` | Every "published" instance has no scheduled transitions, which is what the phase monitor reads |
+| `rootProfileId` / `rootPostId` on posts | These are the authorization gate; NULL sends reads down the *legacy* branch, so the spec covers the old auth path, not the current one |
+| Moderation submission rows, notification events, cache invalidation | Anything downstream of content submission never happens |
+
+So: if you're about to write an insert because the factory doesn't cover your case, add it to the factory. If you genuinely must inline a production constant or algorithm in a spec, comment it with what it has to stay in sync with — `tests/core` does this (`"Mirrors what createDecisionRole in @op/common writes, without importing it"`, `"Must match production's categoryTermUri"`), which is what makes the drift findable later.
+
+**Reach for the file's existing type guard before an `as` cast.** When a test needs to narrow a fixture (`proposalData`, an instance's JSON config), the file usually already has the helper — #1789 replaced an `as` cast with the file's own `seedProposalCollab`, which narrows with a type guard. That several neighbouring tests still use the cast is not a justification: *"the pattern I copied was the local convention rather than an oversight"* — the helper is the right target for those too, in their own PR.
 
 ## Access-tier gating tests (`describeAccessTierGating`)
 

@@ -1,6 +1,6 @@
 ---
 name: drizzle-migrations
-description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), use $inferSelect for row types, and always give findFirst a filter that identifies exactly one row (a non-unique column silently returns the wrong one). Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
+description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. A data backfill is NOT a migration (ship it as a standalone ops script); a unique index must cover every column its JS guard covers; prefer a concrete per-entity edge table over a polymorphic one whose "both ends are proposals" invariant no foreign key can express; and keep a relationship row rather than cascading it away when its absence still has to be displayed. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), use $inferSelect for row types, and always give findFirst a filter that identifies exactly one row (a non-unique column silently returns the wrong one). Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
 ---
 
 ## Where things live
@@ -33,6 +33,21 @@ Recurring review patterns from recent schema PRs (#1186, #1228, #1264, #1274):
   ```
 - **ON DELETE behavior**: confirm what happens to dependents on parent delete. Orphan rows can pile up silently when no cascade is set. Either set the cascade explicitly or document why orphans are OK ("ok to start like this or add an AFTER DELETE trigger").
 - **Don't add defensive `IF NOT EXISTS` / `WHERE NOT EXISTS` guards to migrations** unless you have a real reason — they read as cargo-culted. PR #1274 review: "yeah, was just meant to ensure the migration won't fail but I'll remove."
+- **A unique index has to cover every column the JS check covered**, or the check is decorative under concurrency. PR #1789: two callers both passed an unlocked "is there already a merge edge?" check before either insert, because the unique index was on the source column alone while the predicate spanned source *and* target — both edges committed. When you add a guard in a service, ask what index makes it hold when two requests interleave (see the `service-layer-structure` skill on re-asserting inside the writing statement).
+
+### A generic edge table can't enforce what its ends are
+
+A relationship table keyed on a polymorphic parent — `(entity_a, entity_b, type)` over "anything" — cannot express "both ends are proposals" or "both ends belong to the same decision instance" as a constraint, because there is no column pair for a composite foreign key to point at. PR #1801 review (valentin0h): *"do we have checks at the data layer that these are proposals?"* and *"feels like we need a composite foreign key to ensure certain relationships are blocked … But this table isn't necessarily tied to proposals, so I don't know how to enforce that generically."*
+
+The resolution is to stop being generic: the table that shipped is keyed on `proposals` specifically, so the foreign keys do the work the service layer would otherwise have to. Prefer a concrete per-entity edge table over one polymorphic table whose invariants live only in application code. If a generic table really is the right call, the invariants it can't hold have to be asserted in the service *and* named in a comment on the table — an unenforceable invariant that nobody wrote down is indistinguishable from one that holds.
+
+### Keep the edge when it determines how the row is presented
+
+Before setting `ON DELETE CASCADE` on a relationship, ask whether the *absence* of the far end still needs to be displayed. PR #1761 (scazan): *"if the relationship determines anything about how the proposal shows up, we want that to persist with a dangling relationship so we can still present it (for instance, if merged from another proposal, we still want to display that history or if a proposal was merged into another, we need to flag that it is missing where it was merged to). A simple example would be a GDPR deletion request."* A cascade that tidies the graph also erases the reason a proposal disappeared from a pipeline. Pair the retained edge with a column on the row that consumers can key off (a merged-away marker) so reads don't have to walk the graph to learn the row should be hidden.
+
+### A data backfill is not a migration
+
+Schema changes ship through `pnpm w:db generate`; **data backfills don't**. PR #1825 was closed on exactly this: *"the bitfield backfill must not ship through the drizzle migration pipeline — it will be redone as a standalone ops script if we go ahead."* A migration runs unattended on every environment at boot, in one transaction, with no dry-run, no progress, no re-run story and no per-row error handling — all of which a backfill over real rows needs. Write it as a script that can be run, inspected, and re-run against one environment at a time, and keep the migration to the DDL.
 
 ## Query conventions — prefer relational (RBQ v2) over imperative
 
