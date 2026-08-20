@@ -1,6 +1,6 @@
 ---
 name: access-control
-description: Authorization, permissions, roles, admin checks, authz, gating, and locking down endpoints — via the access-zones library and our wrappers (assertProfileAccess, assertOrgAccess, assertProfileAdmin, getProfileAccessUser, AccessBoundary, AccessTierError) across zones profile, decisions, admin. Order OR'd grant checks so the broadest (admin) short-circuits before any lookup that can throw, and make an authorization path fail with UnauthorizedError rather than propagating a NotFoundError from an internal lookup. Use when adding a permission check, making an endpoint or mutation admin-only, gating a button or UI by role, wiring authz on a tRPC procedure / server action / route, hiding or showing components by permission, or handling the public/anonymous caller (AccessUser | undefined).
+description: Authorization, permissions, roles, admin checks, authz, gating, and locking down endpoints — via the access-zones library and our wrappers (assertProfileAccess, assertOrgAccess, assertProfileAdmin, getProfileAccessUser, AccessBoundary, AccessTierError) across zones profile, decisions, admin. Order OR'd grant checks so the broadest (admin) short-circuits before any lookup that can throw, and make an authorization path fail with UnauthorizedError rather than propagating a NotFoundError from an internal lookup. A relationship read gates BOTH ends on one shared visibility predicate (and joined metadata — a profile named after a proposal's title — leaks what the filter hid); hide a restricted row with NotFoundError, deny with UnauthorizedError; leave a shared getter permissive when admin mutations need it and restrict at the read. Never re-derive the server's authorization rule (or which phase is current) on the client — return the decision from the endpoint. Use when adding a permission check, making an endpoint or mutation admin-only, gating a button or UI by role, wiring authz on a tRPC procedure / server action / route, hiding or showing components by permission, or handling the public/anonymous caller (AccessUser | undefined).
 ---
 
 ## The library
@@ -138,6 +138,32 @@ Before adding a field that exposes another user to the caller:
 
 The procedure tier doesn't protect against this — `networkAuthenticatedProcedure` still lets every in-network user fetch every other user's row. The encoder + service do the filtering.
 
+## A relationship read gates **both** ends — define the predicate once
+
+Every entity a query returns *or accepts as an id* has to satisfy the same visibility predicate the canonical single-row read enforces. When a read joins two rows of the same table — a relationship, an edge, a parent/child pair — the predicate applied to one end and not the other is the single most-repeated authorization defect in review. PR #1789 hit it twice in one file: the first pass filtered `moderationDetachedAt` on the pinned proposal and applied draft / visibility / moderation-flag predicates only to the far-end join; the second pass had them the other way around.
+
+Write the predicate as a function of the table reference and apply it to every end:
+
+```ts
+const needsNoAccessException = (t: typeof proposals): SQL =>
+  and(
+    isNull(t.deletedAt),
+    isNull(t.moderationDetachedAt),
+    ne(t.status, ProposalStatus.DRAFT),
+    eq(t.visibility, Visibility.VISIBLE),
+    noActiveModerationFlag('proposal', t.id),
+  )!;
+```
+
+Four things that thread makes concrete:
+
+- **Decision-level read access does not imply access to every row inside the decision.** `getProposal` also restricts drafts, `HIDDEN` proposals and flagged ones, so "the caller can read this decision" is not the predicate — list the far end only when it needs none of those exceptions.
+- **Joined metadata leaks the thing you hid.** `createProposal` names a proposal's profile after the proposal's title (`name: proposalTitle`) and derives the slug from it too, so returning the linked *profile* hands out the title of a proposal the caller would 404 on. Audit what rides along with an id, not just the id.
+- **Throw `NotFoundError` for a restricted resource, not `UnauthorizedError`** — the same choice `getProposal` makes, so a restricted proposal's existence never leaks through the error type. This is not in tension with the rule below about authorization paths failing with authorization errors: that one is about an *internal lookup* failing (a stale phase id) and surfacing as a 404 on a resource the caller can reach; this one is about deliberately hiding existence from a caller who must not learn the row is there. Deny → `UnauthorizedError`; hide → `NotFoundError`.
+- **Don't tighten the shared low-level getter** when admin mutations legitimately need to operate on restricted rows. `getLinkedProposal` stays permissive because `mergeProposals` / `unmergeProposal` are `decisions: ADMIN` and must resolve hidden or flagged proposals; the restriction belongs to the read call site, with a comment saying so. Adding the filter in the getter would have broken unmerge for exactly the rows that need it most.
+
+Order the checks so the failure type stays deterministic: when the existence probe rides in the same `Promise.all` as the authorization assert, the assert's rejection preempts the parallel read, so an unauthorized caller always gets the authorization error rather than racing a `NotFoundError`.
+
 ## Authorization errors — `UnauthorizedError` and `AccessTierError`
 
 Two distinct error types model the two failure modes:
@@ -192,6 +218,16 @@ If you need a boolean in code (to enable/disable a button, etc.), reach for the 
 **Gate the individual action, not the whole container.** Wrap only the privileged menu items (e.g. Delete / moderation actions) in `<AccessBoundary>` — render the menu itself, and any non-privileged action (e.g. Report), for every viewer. PR #1511: the menu always renders; moderation actions like Delete stay gated to those roles, while Report is shown to everyone. Hiding the entire menu when one action is gated denies non-privileged viewers actions they're allowed to take.
 
 **Gate an owner-or-admin action on the owner-or-admin flag, not on admin alone.** When the server already authorizes an action for the resource's owner (e.g. `deleteProposal` lets the submitter delete), the UI gate must be `canManage || isEditable` — not `canManage` (admin) by itself. A non-admin owner — including anonymous / non-network users, who are *never* admins — otherwise never sees a menu the server would happily serve them. PR #1568: the proposal menu in `ViewProposalsList` was gated on admin alone while the sibling `VotingProposalsList` correctly used `canManageProposals || proposal.isEditable`; owners lost the menu until the two were aligned. When two sibling lists render the same action menu, keep their gating conditions identical so one can't silently diverge.
+
+**Don't re-derive the server's authorization decision on the client — return it from the API.** A client-side "mirror" of a service gate drifts the moment the server gate gains a condition, and it drifts *open*. PR #1822 added this to `ReviewPage`:
+
+```tsx
+// Client-side mirror of the service's `canReadPhaseReviews` gate.
+const canSeeReviewCounts =
+  isAdmin || (canReview && getPhaseReviewSettings({ phases }, currentPhase.phaseId).openReviews);
+```
+
+The server gate it mirrors (`canReadPhaseReviews`) is strictly stronger — it also requires `currentStateId != null` and `isPhaseAtOrBefore(...)` ("no peeking past the current phase"), neither of which the mirror reproduces. Reviewer: *"Shouldn't this just be returned from the backend as opposed to duplicating the logic? I'm hesitant to do much of the extracting of current phase and parsing the capabilities on the frontend."* Two anti-patterns travel together here and both belong on the server: **re-deriving which phase is current** by scanning `instanceData.phases` for `currentStateId`, and **re-implementing a permission rule** over the raw flags. Ship the decision as a field on the endpoint's output (the encoder is the place to add it) and let the UI render a boolean. Reading `instance.access.review` / `instance.access.admin` — flags the server already computed — is fine; recomputing the *rule* over them is not.
 
 For a component that can render both inside and outside a `UserProvider` (e.g. an avatar shown in the onboarding tree), reach for `useMaybeUser()` — it returns `undefined` when no provider is mounted — instead of `useUser()`, which throws. Absence of a user is a valid state there, not a bug (PR #1519).
 
