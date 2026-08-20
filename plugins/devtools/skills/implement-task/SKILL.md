@@ -1,6 +1,6 @@
 ---
 name: implement-task
-description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), `/simplify` + `/review`, then open a PR and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
+description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), `/simplify` + `/review`, then open a draft PR whose description ends with the CRAP metrics block, and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
 ---
 
 Drives a single Asana task from picked → ready-for-review. This skill owns **all** mutation of the Asana task: the atomic claim, every section move, every comment we post, the feature branch, and the PR. `pickup-task` only selects which task to work on.
@@ -23,6 +23,7 @@ These apply to every run of this skill. No exceptions, no "the diff is tiny" car
 1. **ALWAYS run `pnpm format` before every commit.** Every commit, including the plan commit, the first RGR commit, and any fixup commits. Details in Step 7.
 2. **Every PR opens in draft mode** (`gh pr create --draft --base dev`). Agents never open straight to "ready for review" — the author marks it ready when they're satisfied. Details in Step 8.
 3. **Every PR has an assignee set** — the GitHub user mapped from the Asana task's assignee (`scazan` / `valentin0h` / `nourmalaeb`). If the assignee doesn't map, skip the assignment rather than guessing. Details in Step 8.
+4. **Every PR description ends with the CRAP metrics block**, directly above the Asana link. No carve-out for a one-line diff or a docs-only diff — a docs-only diff gets the one-line form. `pr-description` owns the score, the table, and the filtering rules. Details in Step 8.
 
 ## Step 1 — Claim and branch
 
@@ -321,6 +322,20 @@ post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
 ### Done
 
 When gates are green and `/simplify` + `/review` are clean: open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
+
+### CRAP metrics in the PR description
+
+Compute the CRAP metrics **before** you call `gh pr create`, and end the body with them (Hard rule 4). Read `pr-description` for the score, the table columns, and the four filtering rules; this step is only about when to do it.
+
+1. List the functions the branch adds or changes:
+   ```bash
+   git diff origin/dev...HEAD
+   ```
+   Work from the diff, not from your memory of the task. A function you touched in a `/review` pass counts.
+2. Score each one. Complexity comes from reading the function. Coverage comes from the coverage reporter when the workspace has one, and from reading the tests when it doesn't — label the block as an estimate in that case.
+3. Paste the block into the body, above the Asana link.
+
+The metrics report the diff you are about to open, so a late fix invalidates them. If a `/review` iteration or a gate failure changes any function after you compute the block, recompute it. Do not reuse a block from an earlier iteration, and do not report a score you did not derive from the current diff.
 
 ### Assign the PR to the Asana assignee
 

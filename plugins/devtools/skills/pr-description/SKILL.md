@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
+description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
 ---
 
 PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
@@ -15,12 +15,22 @@ The test for every sentence: **could the reviewer get this from the diff?** If y
 
 When that shape is easier to see than to read, draw it — a mermaid diagram is part of the description, not decoration. Everything else stays out.
 
+Two blocks are exempt from that test because they are not prose: the CRAP metrics table and the Asana link. Both are required on every PR. See "CRAP metrics" below.
+
 ## The default — one paragraph
 
 Most PRs need exactly this:
 
 ```markdown
 <One paragraph: what the change does, and the why behind it. End with any non-obvious follow-up or context the reviewer needs.>
+
+## CRAP metrics
+
+| Function | File | Complexity | Coverage | CRAP |
+|---|---|---|---|---|
+| `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
+
+Worst: 14 (`mergeProposalFields`). Nothing above 30.
 
 Asana: https://app.asana.com/0/<project>/<task_gid>
 ```
@@ -94,9 +104,50 @@ Two rules:
 
 When the follow-up is non-trivial, file an Asana task and link it — the PR section is for "where do we pick up from here," the task tracker is for actually following up.
 
+## CRAP metrics
+
+Every PR body ends with a CRAP metrics block, directly above the Asana link. CRAP is the Change Risk Anti-Patterns score. It combines how branchy a function is with how much of it the tests reach, so the reviewer sees where the risk sits before reading the diff. Print the block on every PR, including a one-line change.
+
+### The score
+
+```
+CRAP = complexity² × (1 − coverage)³ + complexity
+```
+
+`coverage` is a fraction from 0 to 1. Round the score to a whole number.
+
+Count `complexity` as McCabe cyclomatic complexity. Start at 1 and add 1 for each of: an `if`, an `else if`, a `case` (not `default`), a loop, a `catch`, a ternary, and each `&&`, `||`, or `??`. Count the same way on every PR — the numbers are only useful when they compare.
+
+Read `coverage` from a coverage reporter when the workspace has one. The `common` monorepo has none today, so derive it instead: divide the branches a test exercises by the function's total branches, and use 0 when no test reaches the function. Mark the block as an estimate when you derive it this way.
+
+### The block
+
+Add one row per function the diff adds or changes, sorted by score, highest first. Then state the worst score and whether anything is above 30.
+
+```markdown
+## CRAP metrics
+
+| Function | File | Complexity | Coverage | CRAP |
+|---|---|---|---|---|
+| `resolveVoteWeight` | `packages/common/src/services/decision/resolveVoteWeight.ts` | 12 | 0% | 156 |
+| `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
+| `getProposalVotes` | `packages/common/src/services/decision/getProposalVotes.ts` | 7 | 100% | 7 |
+
+Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now. Coverage is estimated from the tests; the repo has no coverage reporter.
+```
+
+Four rules keep the block short:
+
+1. Skip a function with a complexity of 1. It carries no signal. Add a trailing line — "6 straight-line functions omitted" — so the reviewer knows the table is filtered.
+2. Keep the 10 highest rows when the table runs longer. Add "+ 14 more, all under 6".
+3. Write one line of justification for any score above 30, as in the example. A high score with no explanation reads as an oversight.
+4. Write "No executable functions changed." when the diff only touches docs, config, schema SQL, or fixtures. That line is the whole block.
+
+The block does not replace the paragraph, and the paragraph does not describe the block. A score above 30 is not a blocker — it is a flag the reviewer decides on.
+
 ## What NOT to include
 
-- **No test-plan checklist.** Reviewers know what gates run and CI re-runs them. A `- [ ] pnpm typecheck` checklist is noise.
+- **No test-plan checklist.** Reviewers know what gates run and CI re-runs them. A `- [ ] pnpm typecheck` checklist is noise. The CRAP block is not a test plan — it reports risk, not which gates you ran, and it stays.
 - **No diff walk-through.** Reviewers read the diff. A bullet list that just enumerates "added X to file Y, added Z to file W" gets skimmed.
 - **No implementation narration.** Which hook you used, which helper you renamed, how many files moved — that's the diff's job. Describe the architecture the change lands in, not the steps that got it there.
 - **No decorative diagram.** A mermaid block that redraws what one sentence already said costs the reviewer more than it gives.
@@ -122,6 +173,8 @@ Drop it on the last line. Reviewers click through to read the original task; the
 
 - **Don't paste an AI-generated summary** of the diff. Concise human framing beats verbose mechanical narration.
 - **Don't open a PR without the Asana link** — it's what makes the PR findable from the task tracker.
+- **Don't open a PR without the CRAP block.** "The diff is one line" and "nothing here is risky" are the cases the block answers in one line — write that line.
+- **Don't pad the CRAP table.** One row per changed function, filtered by the four rules above. A table longer than the paragraph defeats the point.
 - **Don't expand a Summary just to look thorough.** A one-line PR description for a one-line change is correct, not lazy.
 - **Don't leave an architectural change undescribed.** Short is the rule; silent is not. If the PR moves a boundary, changes who owns state, or reorders a migration, that belongs in the body even when the diff is small.
 - **Don't bury a Stacked-on PR** in the middle of the body. First line of the summary, or its own line above it.
