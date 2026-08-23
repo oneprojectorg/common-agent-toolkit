@@ -1,6 +1,6 @@
 ---
 name: technical-writing
-description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). Use when you write or edit a README, doc page, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule: comments decay, so write one only when the reasoning is not obvious from the code, then keep it to one short line.
+description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule: comments decay, so write one only when the reasoning is not obvious from the code, then keep it to one short line.
 ---
 
 Simplified Technical English (STE) keeps a document unambiguous. It helps a reader who skims, who translates the text, or who reads English as a second language. Apply these rules to any prose a person reads, and to your own answer when the user asks for documentation.
@@ -61,6 +61,19 @@ Other skills own their own formats. Follow them first:
 - `i18n-strings` owns product copy in `apps/app`. Write the string in STE, then wrap it in `t()`.
 
 STE governs the prose, not the structure. Keep the code samples, tables, and mermaid diagrams that a document needs.
+
+## A document that follows a template does not explain the template
+
+A structured document — an ADR, a runbook, a design note — carries a fixed set of sections, and the reader knows the format. Restating it inside the document is the failure this skill exists to prevent, at the section level rather than the sentence level. It is also the failure an agent produces most reliably, because a template invites filling every field with prose.
+
+PR #1864 introduced ADR scaffolding under `docs/adr/` and drew five line-level review comments on one file. Three were the same instruction — *"Remove this section"* — one was *"This is too much context, likely from Opus. This should only have the 'Proposed' value"*, and one was *"This context is not helpful and should be reworded."* The corrections that closed them:
+
+- **A field holds its value, not a discussion of the value.** A Status of `Proposed` is `Proposed`. Who ratifies it, and when, is not part of the field — that went into the PR description.
+- **Delete a section that describes the format.** The template already shows its five sections; a document that lists them again has said nothing.
+- **Name the specific things, not the general problem.** The abstract framing ("we need a way to record decisions") was rewritten to name the decisions actually at stake: the ORM query API, the authorization model, the design-system boundary.
+- **Context that belongs to the change, not the artefact, goes in the PR body.** The relationship between the new ADRs and the existing constitution was interesting and it was not part of ADR 0001.
+
+Before you deliver a structured document, read each section and ask what a reader loses if you delete it. Delete the ones with no answer.
 
 ## Checklist
 

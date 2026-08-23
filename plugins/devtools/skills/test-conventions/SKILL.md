@@ -1,6 +1,6 @@
 ---
 name: test-conventions
-description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, seeding through the service layer instead of hand-writing rows (Vitest calls @op/common directly via TestDecisionsDataManager; Playwright can't import it, so extend the shared @op/test factories rather than inserting per spec — and know which derived writes a raw insert skips), writing a test data helper that throws like production rather than no-opping, using a real parser instead of a hand-rolled reader in the assertion path, testing the intersection of two behaviours a change makes coexist rather than each half, keeping `as const` in fixtures (it is a const assertion, not a type assertion a review bot should strip), debugging a failing test, or fixing missing env vars in Playwright runs.
+description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, seeding through the service layer instead of hand-writing rows (Vitest calls @op/common directly via TestDecisionsDataManager; Playwright can't import it, so extend the shared @op/test factories rather than inserting per spec — and know which derived writes a raw insert skips), writing a test data helper that throws like production rather than no-opping, keeping casts out of fixtures and helpers (`as unknown as X` / `as never` hides the production-contract drift the test exists to catch — thread an optional param through the shared factory instead of narrowing at the call site), covering a shared derivation at every surface that consumes it rather than only where you were working, using a real parser instead of a hand-rolled reader in the assertion path, testing the intersection of two behaviours a change makes coexist rather than each half, keeping `as const` in fixtures (it is a const assertion, not a type assertion a review bot should strip), debugging a failing test, or fixing missing env vars in Playwright runs.
 ---
 
 ## Three test surfaces
@@ -72,6 +72,25 @@ Reviewer note on #1799: **"Use the service layers in the e2e tests."** A row you
 So: if you're about to write an insert because the factory doesn't cover your case, add it to the factory. If you genuinely must inline a production constant or algorithm in a spec, comment it with what it has to stay in sync with — `tests/core` does this (`"Mirrors what createDecisionRole in @op/common writes, without importing it"`, `"Must match production's categoryTermUri"`), which is what makes the drift findable later.
 
 **Reach for the file's existing type guard before an `as` cast.** When a test needs to narrow a fixture (`proposalData`, an instance's JSON config), the file usually already has the helper — #1789 replaced an `as` cast with the file's own `seedProposalCollab`, which narrows with a type guard. That several neighbouring tests still use the cast is not a justification: *"the pattern I copied was the local convention rather than an oversight"* — the helper is the right target for those too, in their own PR.
+
+### A cast in a fixture or a helper hides the drift the test exists to catch
+
+This was the most-repeated finding of the 2026-08-19 → 2026-08-23 window — four PRs, three different spellings, one defect:
+
+| Spelling | Where | What it hid |
+|---|---|---|
+| `as unknown as Proposal` | a merge-flow unit fixture (#1831) | whether the fixture is still structurally valid as the `Proposal` contract changes |
+| `as` onto two unrelated shapes | an e2e spec narrowing `instanceData` (#1845) | fixture/schema mismatches, twice in one file |
+| `as never` | a middleware test's mocked `next` and args (#1861) | the helper becoming incompatible with the production middleware contract |
+| `as` on `proposalData` | a router test (#1789) | the fixture shape, with a type guard already available in the file |
+
+A cast in the *assertion* path costs you an assertion. A cast in a *helper* is worse: it removes the compiler's ability to tell every test using that helper that production moved.
+
+**The fix is almost never to narrow at the call site.** #1845 is the model. The root cause was structural — Drizzle types the `instanceData` jsonb column as `unknown`, and `headline` is an instance-level override with no place in the schema's `PhaseDefinition`, so no typed path existed to seed one from a spec. Rather than cast, the author threaded an optional `phaseHeadlines?: Record<string, string>` param through `createDecisionInstance`. The spec then seeds the value at construction, which deleted both casts *and* the read-modify-write `UPDATE` they supported — 22 lines net removed, existing callers unaffected because the param is optional. Extending the shared factory is the cheaper fix as well as the correct one.
+
+### A derivation shared by two surfaces needs coverage on each
+
+Testing a fallback where you happened to be working leaves the other consumer of the same logic uncovered, and the next change regresses it silently. PR #1838 resolved stale budget / category / location values for both the CSV export and the list preview, but only the CSV path got tests — so "an ambiguous legacy zero preserves the snapshot" and "a nonzero numeric override preserves its existing currency" were pinned for exports and unpinned for the list rows rendering the same values. When a fix touches a shared resolver, list its call sites and assert at each one, or move the test down to the resolver and assert both surfaces call it.
 
 ## Access-tier gating tests (`describeAccessTierGating`)
 
