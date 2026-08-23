@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Accessibility-facing strings (aria-label, placeholder, title, alt) count as user-facing and must go through t() too, and so do validation diagnostics composed in @op/common — the service layer has no useTranslations, so return a code the app maps to t() copy rather than a hardcoded English message. @op/sense components are i18n-agnostic and ship English defaults, so the app call site is the only place that can translate them. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. Accessibility-facing strings (aria-label, placeholder, title, alt) count as user-facing and must go through t() too, and so do validation diagnostics composed in @op/common — the service layer has no useTranslations, so return a code the app maps to t() copy rather than a hardcoded English message. @op/sense components are i18n-agnostic and ship English defaults, so the app call site is the only place that can translate them. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. toast.error(error.message) is the most common way raw server text reaches a user — a tRPC failure puts database ids or a serialized Zod payload in the toast, untranslated — so switch on the error code and render t() copy. Before acting on a reported dictionary corruption, scan every locale file for U+FFFD, because a bidirectional-text rendering artifact in a review UI looks identical to a real one. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
 ---
 
 ## Rule
@@ -89,6 +89,8 @@ Either way the raw English string is a debugging detail, not the thing the user 
 
 Never render a raw upstream / library / API error string to the user — it's untranslated and often leaks internals. Map known error flags to localized strings, fall back to a localized generic message otherwise, and send the raw error to the console for debugging. PR #1556: "Let's surface a friendlier error (that can be localized) instead" → `email_exists` maps to localized copy with a localized generic fallback, "raw error still goes to the console for debugging."
 
+**`toast.error(error.message)` is that anti-pattern in its most common spelling**, and a tRPC error makes it worse than untranslated. PR #1848's assign dialog surfaces two of them: the service's own text — `Not available for review in this phase: <uuid>, <uuid>` — which shows a user a list of database ids, and the raw **Zod** payload when a Select-all exceeds the endpoint's 500-id cap, which shows them a serialized validation object. Neither is copy anyone wrote. Switch on the error's `data.code` / the Common error type and render a `t()` string per case with one localized generic fallback; if the user can trigger the failure from the UI, prevent it in the UI too (see `component-file-structure` on matching a server-side cap).
+
 ## Interpolation
 
 - Simple values: `t("Hello {name}", { name: userName })`
@@ -114,6 +116,18 @@ Before you open the PR, grep each new key back out of `en.json` and confirm the 
 ### Delete the keys your change orphaned
 
 Removing or replacing UI means removing its dictionary keys — in **every** locale file, in the same PR. Dead keys mislead translators and hide which copy is live. PR #1682 review: the "Coverage" radio group was replaced by a "Scope" section but `"How should proposals get distributed to reviewers?"`, `"Full coverage"`, and `"Every reviewer scores every proposal"` "remain across all 7 language dictionaries." PR #1684 was the follow-up cleanup: a codebase-wide search confirmed no remaining references, then the keys came out of all seven files at once.
+
+### Verify a reported dictionary corruption across every locale — and don't trust an RTL screenshot
+
+A replacement character (U+FFFD) in a dictionary value is a real defect: the string renders mangled for that locale and nothing else fails. But a bidirectional-text rendering artifact in a review UI looks identical to one, so check the file before you edit it. PR #1851 was flagged for `التنز��ل` in `ar.json`; a scan of every dictionary found `ar` clean and the three added Arabic strings parsing with no replacement character — while turning up a genuine one in `bn.json` that had been sitting on `dev` (`"Saving...": "���ংরক্ষণ হচ্ছে..."`, a lost leading `স`).
+
+So the check is a scan, not a look:
+
+```bash
+grep -n $'\xef\xbf\xbd' apps/app/src/lib/i18n/dictionaries/*.json   # U+FFFD, every locale
+```
+
+Two things that thread got right and are worth copying. **Report the scan across all locales**, not just the one you were asked about — one flag surfaced a different file's real corruption. And **a pre-existing corruption on `dev` that your branch doesn't touch is a separate PR**, named as such, per the scope-discipline rule in `code-conventions`.
 
 ## Composing strings: don't hardcode the separator
 
