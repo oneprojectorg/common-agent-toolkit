@@ -50,7 +50,7 @@ State the fact and stop. Do not tell the reader how to feel about the fact.
 
 ## Scope
 
-Apply this skill to a README, a doc page, a runbook, a release note, a skill body, help text, an error message, and a code comment.
+Apply this skill to a README, a doc page, a runbook, a release note, a skill body, help text, an error message, a code comment, and an Asana task comment.
 
 A code comment has one extra rule before the prose rules: comments decay, so write one only when the reasoning is not obvious from the code and cannot be made obvious by rewriting it. Then write one short line. The `code-conventions` skill owns that decision.
 

@@ -15,7 +15,7 @@ description: Branching and PR workflow — feature branches off dev with issue-<
 ## Workflow
 
 1. `git fetch origin dev && git checkout -b "issue-$TASK_GID" origin/dev` — always base the branch explicitly on `origin/dev`. A bare `git checkout -b` branches from the current HEAD (stacking the new task on whatever was checked out last), and `git checkout dev` itself is hook-blocked.
-2. Make edits. **Before every `git commit`, run `pnpm format`** — no exceptions, including plan commits and one-line fixes. Then commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`.
+2. Make edits. **Before every `git commit`, run `pnpm format`** — no exceptions, including plan commits and one-line fixes. Then commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`. Write the summary and any body lines in the `technical-writing` skill's Simplified Technical English — active voice, one word per meaning, no filler.
 3. Push the feature branch: `git push -u origin "issue-$TASK_GID"`.
 4. Open the PR with `gh pr create --draft --base dev`. If the task has an Asana assignee that maps to a valid GitHub user (`scazan` / `valentin0h` / `nourmalaeb`), set it as the PR assignee with `gh pr edit --add-assignee <login>` — see `implement-task` Step 8 for the mapping.
 5. Never `git push --force` to a shared branch unless you are rebasing. If you must rewrite history, do it on your own feature branch only.

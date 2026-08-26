@@ -5,6 +5,8 @@ description: How to write a PR description in this repo — short, concise, and 
 
 PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
 
+Write every surviving sentence in the `technical-writing` skill's Simplified Technical English — active voice, a named actor, one word per meaning, no filler ("It is important to note", "Crucially"). This skill decides what belongs in the body; `technical-writing` decides how to phrase it.
+
 The test for every sentence: **could the reviewer get this from the diff?** If yes, cut it. What survives is almost always **architectural** — the shape of the change rather than its contents:
 
 - A new or moved boundary (a procedure tier, a service split, a package dependency).
