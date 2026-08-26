@@ -31,6 +31,16 @@ bash scripts/sync-vercel.sh
 
 Then commit the resulting diff.
 
+## Installing via `npx skills`
+
+The plugin is also discoverable by [vercel-labs/skills](https://www.npmjs.com/package/skills) (`npx skills`), which reads the `skills` array declared in `plugins/devtools/.claude-plugin/plugin.json`:
+
+```bash
+npx skills add oneprojectorg/common-agent-toolkit --all
+```
+
+Or install a subset by name with `-s`. This route only installs `SKILL.md` content — it does not wire up the `PreToolUse` hooks, so engineers who need the protected-branch guards still need the `/plugin marketplace add` path above.
+
 ## What's in the toolkit
 
 ### Skills

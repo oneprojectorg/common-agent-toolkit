@@ -7,6 +7,8 @@ description: Wrap every user-facing string in apps/app with translations (i18n) 
 
 Every user-facing string goes through translation. Never hardcode display text.
 
+Write the English source string in the `technical-writing` skill's Simplified Technical English before you wrap it in `t()` — active voice, one word per meaning, no filler. Translate from that version, not from a draft you plan to clean up later.
+
 ## "User-facing" includes the strings the user never sees
 
 The visible label is the easy half. The accessibility-facing and assistive-tech-facing attributes are user-facing too, and they're the half that gets missed — a screen-reader user gets English no matter their locale, and the visible label being correctly wrapped makes the gap invisible in review. Wrap **all** of these:

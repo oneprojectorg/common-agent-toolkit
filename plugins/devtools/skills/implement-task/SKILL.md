@@ -5,6 +5,8 @@ description: Drive an Asana task from picked → ready-for-review — claim it a
 
 Drives a single Asana task from picked → ready-for-review. This skill owns **all** mutation of the Asana task: the atomic claim, every section move, every comment we post, the feature branch, and the PR. `pickup-task` only selects which task to work on.
 
+Every comment, story, and PR body this skill writes follows the `technical-writing` skill's Simplified Technical English — active voice, one word per meaning, no filler.
+
 **Preconditions**: you have a `TASK_ID` (Asana task gid). Branch may or may not exist yet — Step 1 creates it. You do NOT need to have already claimed the task or moved it on the board.
 
 ## Required env

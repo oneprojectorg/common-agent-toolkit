@@ -1,6 +1,6 @@
 ---
 name: technical-writing
-description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule: comments decay, so write one only when the reasoning is not obvious from the code, then keep it to one short line.
+description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule — comments decay — so write one only when the reasoning is not obvious from the code, then keep it to one short line.
 ---
 
 Simplified Technical English (STE) keeps a document unambiguous. It helps a reader who skims, who translates the text, or who reads English as a second language. Apply these rules to any prose a person reads, and to your own answer when the user asks for documentation.
@@ -50,7 +50,7 @@ State the fact and stop. Do not tell the reader how to feel about the fact.
 
 ## Scope
 
-Apply this skill to a README, a doc page, a runbook, a release note, a skill body, help text, an error message, and a code comment.
+Apply this skill to a README, a doc page, a runbook, a release note, a skill body, help text, an error message, a code comment, and an Asana task comment.
 
 A code comment has one extra rule before the prose rules: comments decay, so write one only when the reasoning is not obvious from the code and cannot be made obvious by rewriting it. Then write one short line. The `code-conventions` skill owns that decision.
 

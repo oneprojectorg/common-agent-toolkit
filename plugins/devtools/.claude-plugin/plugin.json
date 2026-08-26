@@ -5,5 +5,29 @@
   "author": {
     "name": "One Project",
     "url": "https://github.com/oneprojectorg"
-  }
+  },
+  "skills": [
+    "./skills/access-control",
+    "./skills/agent-setup",
+    "./skills/api-endpoints",
+    "./skills/asana-api",
+    "./skills/branch-and-pr",
+    "./skills/code-conventions",
+    "./skills/component-file-structure",
+    "./skills/dev-environment",
+    "./skills/drizzle-migrations",
+    "./skills/file-uploads",
+    "./skills/i18n-strings",
+    "./skills/implement-task",
+    "./skills/pickup-task",
+    "./skills/pr-description",
+    "./skills/realtime-channels",
+    "./skills/release",
+    "./skills/sense-conventions",
+    "./skills/service-layer-structure",
+    "./skills/technical-writing",
+    "./skills/test-conventions",
+    "./skills/vercel-react-best-practices",
+    "./skills/workspace-shortcuts"
+  ]
 }
