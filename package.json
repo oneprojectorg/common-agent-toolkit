@@ -1,0 +1,25 @@
+{
+  "name": "common-agent-toolkit",
+  "version": "0.21.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code plugin marketplace for the One Project common monorepo.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "evals": "vitest run --config vitest.evals.config.ts",
+    "evals:ui": "vitest-evals serve",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tinyrainbow": "^3.1.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "vitest-evals": "^0.16.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.5.4"
+  }
+}

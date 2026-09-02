@@ -89,8 +89,20 @@ common-agent-toolkit/
 │           ├── hooks.json
 │           ├── block-protected-branches.sh
 │           └── require-feature-branch.sh
+├── evals/
+│   ├── harness/claudeCode.ts
+│   ├── judges.ts
+│   ├── skills.ts
+│   └── skills.eval.ts
+├── tests/
+│   └── skills.test.ts
+├── skill-audit/
+│   ├── eval-sets/<name>.json
+│   └── sync-to-cache.sh
 ├── scripts/
 │   └── sync-vercel.sh
+├── vitest.config.ts
+├── vitest.evals.config.ts
 ├── README.md
 └── LICENSE
 ```
@@ -111,6 +123,107 @@ common-agent-toolkit/
 
 3. Optional supporting files (`scripts/`, `references/`, etc.) live next to `SKILL.md` in the same folder.
 4. Add a row in the README table above.
+5. Add `skill-audit/eval-sets/<name>.json` and run `pnpm evals`. The structural
+   suite fails on a skill that has no eval set.
+
+## Tests and evals
+
+Two suites, split by cost. Install the dev dependencies once with `pnpm install`.
+
+| Command | What it checks | Cost |
+|---|---|---|
+| `pnpm test` | Structure of the plugin. No model calls. | Free, ~0.1s |
+| `pnpm evals` | Behaviour of each skill in a real Claude Code session. | One agent turn per case |
+
+### `pnpm test` — structural suite
+
+`tests/skills.test.ts` asserts the invariants that silently degrade skill routing:
+
+- Every `SKILL.md` parses, and its `name` matches its directory.
+- `plugin.json` lists every skill directory, and only those.
+- `plugin.json` and `package.json` declare the same version.
+- Every skill has a row in the README table.
+- Both branch-guard hooks exist and appear in `hooks.json`.
+- Every eval set parses, names a real skill, and covers both directions.
+- Every skill has an eval set.
+- Each skill's `description` plus `when_to_use` stays under 1,536 characters.
+  Claude Code truncates the listing entry past that point, which drops the
+  routing keywords in the tail.
+
+Two of these carry a ratchet list of the skills that already fail them: the
+1,536-character cap, and eval-set coverage. A new skill cannot join a ratchet
+list. Fix an entry and delete its line.
+
+### `pnpm evals` — behavioural suite
+
+`evals/skills.eval.ts` builds one [vitest-evals](https://github.com/getsentry/vitest-evals)
+suite per file in `skill-audit/eval-sets/`. Each case runs one prompt through
+`claude -p` and scores the result with two deterministic judges:
+
+- **`CanonicalAnswerJudge`** — **gates the build.** Did the canonical pattern
+  survive to the answer? `expected_terms` match anywhere in the transcript,
+  because reading the right convention out of a file is the skill working.
+  `forbidden_terms` match the final answer only, so the agent keeps credit for a
+  term it saw and rejected.
+- **`SkillRoutingJudge`** — **recorded, not gated** (`threshold: null`). Did the
+  skill's body reach the model? A `Skill` tool call counts, and so does a `Read`
+  of the `SKILL.md`. On a `should_satisfy: false` case the judge inverts, because
+  a description that over-matches burns context on every unrelated prompt.
+
+Routing records rather than gates because `common/CLAUDE.md` restates several
+skills — its design-token and `@op/sense` import rules are `sense-conventions`
+almost verbatim. That text sits in context on every turn, so the agent answers
+correctly without ever loading the skill, and routing scores 0 on a run that did
+nothing wrong. A right answer through ambient context is not a regression.
+
+Read the routing scores anyway. A skill with a high answer score and a floor-level
+routing score is a skill whose content already lives in `CLAUDE.md`. That
+duplication costs context on every turn and gives you two copies to drift apart —
+deleting it from `CLAUDE.md` and letting the skill own it is the usual fix.
+
+The harness passes `--plugin-dir plugins/devtools`, so an eval scores the skills
+in your working tree. You do not need to install or re-sync the plugin.
+
+`retry: 1` gives each case two attempts. That is the vitest equivalent of the
+Python auditors' two-runs-per-query rule, and it keeps one unlucky sample from
+failing a healthy skill.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `EVAL_MODEL` | `claude-sonnet-5` | Model under test. Haiku answers skill-shaped prompts from general knowledge instead of loading the skill, so it reports routing failures the real harness does not have. |
+| `EVAL_CWD` | this repo | **Set this.** Directory the agent runs in; point it at a `common` checkout. The prompts name paths like `packages/common` and workspaces like `api`, so anywhere else the agent reports that it cannot find them and asks for a path instead of loading the skill. That scores as a routing failure the real harness does not have. |
+| `EVAL_CONCURRENCY` | `4` | Prompts in flight at once. |
+| `EVAL_TIMEOUT_MS` | `240000` | Wall-clock cap per prompt. |
+
+```bash
+EVAL_CWD=~/oneproject/common pnpm evals
+```
+
+Run one skill with `-t "skill: branch-and-pr"`, or one case with `-t "<part of
+the query>"`. Inspect a finished run in the browser with
+`pnpm evals:ui .vitest-evals/report.json`.
+
+The harness denies `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`,
+`WebSearch`, and `Task` through `--disallowed-tools`, so an eval cannot mutate
+the checkout or reach the network. `--allowed-tools` does not do this on its own
+— it pre-approves the tools it names and leaves every other tool available.
+
+### Sampling for a rate
+
+By default each case runs once. Set `EVAL_SAMPLES` above 1 to grade the case on
+its hit rate instead of a single verdict, which is what you want when you are
+judging whether a description is reliable rather than whether it works at all:
+
+```bash
+EVAL_CWD=~/oneproject/common EVAL_SAMPLES=5 pnpm evals -t "skill: sense-conventions"
+```
+
+The failure message lists every sample's score and rationale, so `3/5` and `5/5`
+are distinguishable. `EVAL_PASS_RATE` sets the bar (default `0.5`).
+
+At one sample the suite retries once, so an unlucky draw does not fail a healthy
+skill. Above one sample the hit rate already absorbs that, so the retry is off and
+a run costs exactly `EVAL_SAMPLES` turns per case.
 
 ## License
 
