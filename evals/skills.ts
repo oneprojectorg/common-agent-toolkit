@@ -47,35 +47,72 @@ export type Skill = {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-function readSkill(dir: string): Skill {
+/** A skill that parsed, or the reason it did not. */
+export type SkillResult = { ok: true; skill: Skill } | { ok: false; reason: string };
+
+/**
+ * Reads one skill without throwing.
+ *
+ * The structural suite reports a broken skill as one failing test. Throwing
+ * would fail collection instead, taking every other skill's result with it and
+ * hiding how many are actually wrong.
+ */
+export function tryReadSkill(dir: string): SkillResult {
   const path = join(SKILLS_DIR, dir, "SKILL.md");
-  const raw = readFileSync(path, "utf8");
-  const match = FRONTMATTER.exec(raw);
-  if (!match?.[1]) {
-    throw new Error(`${dir}/SKILL.md has no YAML frontmatter block`);
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return { ok: false, reason: `${dir} has no SKILL.md` };
   }
 
-  const parsed = FrontmatterSchema.safeParse(parseYaml(match[1]));
+  const match = FRONTMATTER.exec(raw);
+  if (!match?.[1]) {
+    return { ok: false, reason: `${dir}/SKILL.md has no YAML frontmatter block` };
+  }
+
+  let frontmatterYaml: unknown;
+  try {
+    frontmatterYaml = parseYaml(match[1]);
+  } catch (error) {
+    return { ok: false, reason: `${dir}/SKILL.md frontmatter is not valid YAML: ${(error as Error).message}` };
+  }
+
+  const parsed = FrontmatterSchema.safeParse(frontmatterYaml);
   if (!parsed.success) {
-    throw new Error(`${dir}/SKILL.md frontmatter is invalid: ${parsed.error.message}`);
+    return { ok: false, reason: `${dir}/SKILL.md frontmatter is invalid: ${parsed.error.message}` };
   }
 
   const frontmatter = parsed.data;
   return {
-    dir,
-    path,
-    frontmatter,
-    body: raw.slice(match[0].length),
-    listingChars: frontmatter.description.length + (frontmatter.when_to_use?.length ?? 0),
+    ok: true,
+    skill: {
+      dir,
+      path,
+      frontmatter,
+      body: raw.slice(match[0].length),
+      listingChars: frontmatter.description.length + (frontmatter.when_to_use?.length ?? 0),
+    },
   };
+}
+
+function readSkill(dir: string): Skill {
+  const result = tryReadSkill(dir);
+  if (!result.ok) throw new Error(result.reason);
+  return result.skill;
+}
+
+/** Every skill directory name under `plugins/devtools/skills/`, sorted. */
+export function readSkillDirs(): string[] {
+  return readdirSync(SKILLS_DIR)
+    .filter((entry) => statSync(join(SKILLS_DIR, entry)).isDirectory())
+    .sort();
 }
 
 /** Every skill in the working tree, sorted by directory name. */
 export function readSkills(): Skill[] {
-  return readdirSync(SKILLS_DIR)
-    .filter((entry) => statSync(join(SKILLS_DIR, entry)).isDirectory())
-    .sort()
-    .map(readSkill);
+  return readSkillDirs().map(readSkill);
 }
 
 const EvalCaseSchema = z

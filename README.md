@@ -90,17 +90,30 @@ common-agent-toolkit/
 │           ├── block-protected-branches.sh
 │           └── require-feature-branch.sh
 ├── evals/
-│   ├── harness/claudeCode.ts
+│   ├── harness/
+│   │   ├── claudeCode.ts
+│   │   ├── pi.ts
+│   │   ├── spawnStream.ts
+│   │   ├── transcript.ts
+│   │   └── types.ts
+│   ├── agents.ts
+│   ├── env.ts
 │   ├── judges.ts
 │   ├── skills.ts
 │   └── skills.eval.ts
 ├── tests/
-│   └── skills.test.ts
+│   ├── judges.test.ts
+│   └── skill-structure.test.ts
 ├── skill-audit/
 │   ├── eval-sets/<name>.json
 │   └── sync-to-cache.sh
 ├── scripts/
 │   └── sync-vercel.sh
+├── .github/workflows/
+│   ├── test.yml
+│   ├── evals.yml
+│   └── evals-local.yml
+├── skills.yaml
 ├── vitest.config.ts
 ├── vitest.evals.config.ts
 ├── README.md
@@ -137,23 +150,40 @@ Two suites, split by cost. Install the dev dependencies once with `pnpm install`
 
 ### `pnpm test` — structural suite
 
-`tests/judges.test.ts` covers the scorers themselves, and `tests/skills.test.ts`
-asserts the invariants that silently degrade skill routing:
+`tests/judges.test.ts` covers the scorers, and `tests/skill-structure.test.ts`
+checks every skill against `skills.yaml` — one test per skill, plus two that
+police the table itself.
 
-- Every `SKILL.md` parses, and its `name` matches its directory.
-- `plugin.json` lists every skill directory, and only those.
-- `plugin.json` and `package.json` declare the same version.
-- Every skill has a row in the README table.
-- Both branch-guard hooks exist and appear in `hooks.json`.
-- Every eval set parses, names a real skill, and covers both directions.
-- Every skill has an eval set.
-- Each skill's `description` plus `when_to_use` stays under 1,536 characters.
-  Claude Code truncates the listing entry past that point, which drops the
-  routing keywords in the tail.
+`skills.yaml` is the readable record of what each skill should look like. A row
+with no fields expects the default structure: a `SKILL.md` with parseable
+frontmatter, a `name` matching the directory, a non-empty body, and listing text
+under `listing_max_chars`. Three optional fields cover the exceptions:
 
-Two of these carry a ratchet list of the skills that already fail them: the
-1,536-character cap, and eval-set coverage. A new skill cannot join a ratchet
-list. Fix an entry and delete its line.
+| Field | Effect |
+|---|---|
+| `listing_over_cap` | Declares the listing text is already over the cap. Claude Code truncates each entry's `description` plus `when_to_use` at 1,536 characters, which drops the routing keywords in the tail. |
+| `extra_paths` | Files and directories that must exist beside `SKILL.md`. |
+| `required_frontmatter` | Frontmatter keys required beyond `name` and `description` — the vendored Vercel skill's `license`, which carries its upstream attribution. |
+
+Two properties make the table hard to drift from:
+
+- **Every directory needs a row, and every row needs a directory.** A directory
+  with no row is a skill nobody tests; a row with no directory is a check that
+  silently stopped running. Both fail.
+- **`listing_over_cap` is a ratchet, not an exemption.** A separate test asserts
+  the declared set equals the set actually over the cap, so trimming a
+  description below it fails the suite until you delete its line. A new skill
+  cannot add the field.
+
+A skill whose frontmatter does not parse fails its own test and reports why,
+rather than failing collection and taking the other 21 results with it.
+
+This suite reads skills, not the files that register them. It does **not** catch
+a skill missing from `plugin.json` (invisible to the agent) or listed there after
+deletion, a `marketplace.json` source pointing at nothing, version drift between
+`plugin.json` and `package.json`, a skill absent from the README table, or an
+eval set naming a skill that no longer exists. Those checks were removed with
+the previous suite.
 
 ### `pnpm evals` — behavioural suite
 

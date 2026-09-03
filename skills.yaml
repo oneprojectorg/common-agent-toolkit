@@ -1,0 +1,64 @@
+# The skill table the structural suite runs over.
+#
+# Every directory under `plugins/devtools/skills/` needs a row here, and every
+# row needs a directory — `tests/skill-structure.test.ts` asserts the two match
+# exactly. That is what keeps a new skill from arriving with no coverage, which
+# is the same silent gap as a skill missing from `plugin.json`.
+#
+# A row with no fields expects the default structure:
+#
+#   - a `SKILL.md` with parseable YAML frontmatter
+#   - `name` matching the directory
+#   - a non-empty body below the frontmatter
+#   - `description` (plus `when_to_use`, if it ever gains one) under
+#     `listing_max_chars`
+#
+# Fields, all optional:
+#
+#   listing_over_cap    Declares the listing text is over the cap already. A
+#                       ratchet, not an exemption: the suite fails if the skill
+#                       is no longer over, so fixing one means deleting its
+#                       line. A new skill cannot add this field.
+#   extra_paths         Files and directories that must exist beside SKILL.md.
+#   required_frontmatter  Frontmatter keys that must be present, beyond the
+#                       `name` and `description` every skill needs.
+
+# Characters Claude Code keeps from each listing entry's description plus
+# when_to_use. Past this the routing keywords in the tail never reach the model.
+listing_max_chars: 1536
+
+skills:
+  access-control:
+    listing_over_cap: true
+  agent-setup:
+    extra_paths: [references]
+  api-endpoints: {}
+  asana-api: {}
+  branch-and-pr: {}
+  code-conventions:
+    listing_over_cap: true
+  component-file-structure:
+    listing_over_cap: true
+  dev-environment: {}
+  drizzle-migrations: {}
+  file-uploads: {}
+  i18n-strings:
+    listing_over_cap: true
+  implement-task: {}
+  pickup-task: {}
+  pr-description: {}
+  realtime-channels: {}
+  release: {}
+  sense-conventions:
+    listing_over_cap: true
+  service-layer-structure:
+    listing_over_cap: true
+  technical-writing: {}
+  test-conventions:
+    listing_over_cap: true
+  # Vendored from Vercel. The license key carries the upstream attribution the
+  # README promises, so it is required rather than incidental.
+  vercel-react-best-practices:
+    extra_paths: [AGENTS.md, README.md, metadata.json, rules]
+    required_frontmatter: [license]
+  workspace-shortcuts: {}
