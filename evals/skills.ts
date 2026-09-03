@@ -1,0 +1,173 @@
+/**
+ * Reads the skill inventory out of the working tree.
+ *
+ * Both suites read from here, so an eval and a structural test always agree on
+ * what "the skills" are. Nothing here touches the installed plugin cache — the
+ * source of truth is `plugins/devtools/skills/` in this checkout.
+ */
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
+import { z } from "zod";
+
+export const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+export const PLUGIN_DIR = join(REPO_ROOT, "plugins", "devtools");
+export const SKILLS_DIR = join(PLUGIN_DIR, "skills");
+export const EVAL_SETS_DIR = join(REPO_ROOT, "skill-audit", "eval-sets");
+
+/**
+ * Claude Code truncates each listing entry's `description` + `when_to_use` at
+ * this many characters. Past the cap the routing keywords in the tail — usually
+ * the "Use when ..." clause — never reach the model.
+ */
+export const SKILL_LISTING_MAX_DESC_CHARS = 1536;
+
+const FrontmatterSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    when_to_use: z.string().optional(),
+  })
+  .loose();
+
+export type SkillFrontmatter = z.infer<typeof FrontmatterSchema>;
+
+export type Skill = {
+  /** Directory name under `plugins/devtools/skills/`. */
+  dir: string;
+  /** Absolute path to the skill's `SKILL.md`. */
+  path: string;
+  frontmatter: SkillFrontmatter;
+  /** Markdown after the closing frontmatter fence. */
+  body: string;
+  /** Characters Claude Code counts against the listing cap. */
+  listingChars: number;
+};
+
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
+/** A skill that parsed, or the reason it did not. */
+export type SkillResult = { ok: true; skill: Skill } | { ok: false; reason: string };
+
+/**
+ * Reads one skill without throwing.
+ *
+ * The structural suite reports a broken skill as one failing test. Throwing
+ * would fail collection instead, taking every other skill's result with it and
+ * hiding how many are actually wrong.
+ */
+export function tryReadSkill(dir: string): SkillResult {
+  const path = join(SKILLS_DIR, dir, "SKILL.md");
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return { ok: false, reason: `${dir} has no SKILL.md` };
+  }
+
+  const match = FRONTMATTER.exec(raw);
+  if (!match?.[1]) {
+    return { ok: false, reason: `${dir}/SKILL.md has no YAML frontmatter block` };
+  }
+
+  let frontmatterYaml: unknown;
+  try {
+    frontmatterYaml = parseYaml(match[1]);
+  } catch (error) {
+    return { ok: false, reason: `${dir}/SKILL.md frontmatter is not valid YAML: ${(error as Error).message}` };
+  }
+
+  const parsed = FrontmatterSchema.safeParse(frontmatterYaml);
+  if (!parsed.success) {
+    return { ok: false, reason: `${dir}/SKILL.md frontmatter is invalid: ${parsed.error.message}` };
+  }
+
+  const frontmatter = parsed.data;
+  return {
+    ok: true,
+    skill: {
+      dir,
+      path,
+      frontmatter,
+      body: raw.slice(match[0].length),
+      listingChars: frontmatter.description.length + (frontmatter.when_to_use?.length ?? 0),
+    },
+  };
+}
+
+function readSkill(dir: string): Skill {
+  const result = tryReadSkill(dir);
+  if (!result.ok) throw new Error(result.reason);
+  return result.skill;
+}
+
+/** Every skill directory name under `plugins/devtools/skills/`, sorted. */
+export function readSkillDirs(): string[] {
+  return readdirSync(SKILLS_DIR)
+    .filter((entry) => statSync(join(SKILLS_DIR, entry)).isDirectory())
+    .sort();
+}
+
+/** Every skill in the working tree, sorted by directory name. */
+export function readSkills(): Skill[] {
+  return readSkillDirs().map(readSkill);
+}
+
+const EvalCaseSchema = z
+  .object({
+    /** Prompt handed to the agent verbatim. */
+    query: z.string().min(1),
+    /** True when the skill's canonical pattern belongs in the answer. */
+    should_satisfy: z.boolean().optional(),
+    /** Name the older auditors used for the same field. */
+    should_trigger: z.boolean().optional(),
+    /** Any one of these signals the canonical pattern. Case-insensitive. */
+    expected_terms: z.array(z.string().min(1)).default([]),
+    /** None of these may appear in the final answer. Case-insensitive. */
+    forbidden_terms: z.array(z.string().min(1)).default([]),
+  })
+  .refine((c) => c.should_satisfy !== undefined || c.should_trigger !== undefined, {
+    message: "case needs should_satisfy (or the legacy should_trigger)",
+  })
+  .transform(({ should_satisfy, should_trigger, ...rest }) => ({
+    ...rest,
+    should_satisfy: should_satisfy ?? should_trigger ?? true,
+  }));
+
+export type EvalCase = z.output<typeof EvalCaseSchema>;
+
+const EvalSetSchema = z.array(EvalCaseSchema).min(1);
+
+export type EvalSet = {
+  /** Skill directory the set exercises. */
+  skill: string;
+  path: string;
+  cases: EvalCase[];
+};
+
+/** Every eval set in `skill-audit/eval-sets/`, sorted by skill name. */
+export function readEvalSets(): EvalSet[] {
+  return readdirSync(EVAL_SETS_DIR)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()
+    .map((entry) => {
+      const path = join(EVAL_SETS_DIR, entry);
+
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(path, "utf8"));
+      } catch (error) {
+        // Outside the guard this raised a bare `Unexpected token` with no file
+        // name, which is useless across 13 files.
+        throw new Error(`${entry} is not valid JSON: ${(error as Error).message}`);
+      }
+
+      const parsed = EvalSetSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(`${entry} is not a valid eval set: ${parsed.error.message}`);
+      }
+      return { skill: entry.replace(/\.json$/, ""), path, cases: parsed.data };
+    });
+}

@@ -10,3 +10,7 @@ skill-audit/results/
 .commitmsg
 .prbody.md
 .audit/
+
+# Vitest eval artifacts — reports embed prompts and answers, which may quote the
+# private codebase under test. Re-run `pnpm evals` locally to regenerate.
+.vitest-evals/
