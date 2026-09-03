@@ -117,7 +117,17 @@ export function readEvalSets(): EvalSet[] {
     .sort()
     .map((entry) => {
       const path = join(EVAL_SETS_DIR, entry);
-      const parsed = EvalSetSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(path, "utf8"));
+      } catch (error) {
+        // Outside the guard this raised a bare `Unexpected token` with no file
+        // name, which is useless across 13 files.
+        throw new Error(`${entry} is not valid JSON: ${(error as Error).message}`);
+      }
+
+      const parsed = EvalSetSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error(`${entry} is not a valid eval set: ${parsed.error.message}`);
       }

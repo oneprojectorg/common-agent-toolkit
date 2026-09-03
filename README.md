@@ -133,11 +133,12 @@ Two suites, split by cost. Install the dev dependencies once with `pnpm install`
 | Command | What it checks | Cost |
 |---|---|---|
 | `pnpm test` | Structure of the plugin. No model calls. | Free, ~0.1s |
-| `pnpm evals` | Behaviour of each skill in a real Claude Code session. | One agent turn per case |
+| `pnpm evals` | Behaviour of each skill in a real agent session — Claude Code, pi, or a local model. | One agent turn per case |
 
 ### `pnpm test` — structural suite
 
-`tests/skills.test.ts` asserts the invariants that silently degrade skill routing:
+`tests/judges.test.ts` covers the scorers themselves, and `tests/skills.test.ts`
+asserts the invariants that silently degrade skill routing:
 
 - Every `SKILL.md` parses, and its `name` matches its directory.
 - `plugin.json` lists every skill directory, and only those.
@@ -157,56 +158,269 @@ list. Fix an entry and delete its line.
 ### `pnpm evals` — behavioural suite
 
 `evals/skills.eval.ts` builds one [vitest-evals](https://github.com/getsentry/vitest-evals)
-suite per file in `skill-audit/eval-sets/`. Each case runs one prompt through
-`claude -p` and scores the result with two deterministic judges:
+suite per file in `skill-audit/eval-sets/`. Each case runs one prompt through an
+agent and scores the result with two deterministic judges:
 
-- **`CanonicalAnswerJudge`** — **gates the build.** Did the canonical pattern
-  survive to the answer? `expected_terms` match anywhere in the transcript,
-  because reading the right convention out of a file is the skill working.
-  `forbidden_terms` match the final answer only, so the agent keeps credit for a
-  term it saw and rejected.
-- **`SkillRoutingJudge`** — **recorded, not gated** (`threshold: null`). Did the
-  skill's body reach the model? A `Skill` tool call counts, and so does a `Read`
-  of the `SKILL.md`. On a `should_satisfy: false` case the judge inverts, because
-  a description that over-matches burns context on every unrelated prompt.
+- **`CanonicalAnswerJudge`** — did the canonical pattern survive to the answer?
+  `expected_terms` match what the agent said: its assistant messages and its
+  final answer. `forbidden_terms` match the final answer only, so the agent keeps
+  credit for a term it saw and rejected. Either list is satisfied by any one of
+  its terms, so a list holds alternative spellings of one convention rather than
+  a checklist.
+- **`SkillRoutingJudge`** — did the skill's body reach the model? A skill-tool
+  call counts, and so does a read of the `SKILL.md`. On a `should_satisfy: false`
+  case the judge inverts, because a description that over-matches burns context
+  on every unrelated prompt.
 
-Routing records rather than gates because `common/CLAUDE.md` restates several
-skills — its design-token and `@op/sense` import rules are `sense-conventions`
-almost verbatim. That text sits in context on every turn, so the agent answers
-correctly without ever loading the skill, and routing scores 0 on a run that did
-nothing wrong. A right answer through ambient context is not a regression.
+Three things are kept out of the answer judge's haystack, because each one used
+to hand a case a point the agent never earned:
 
-Read the routing scores anyway. A skill with a high answer score and a floor-level
+| Left out | Why |
+|---|---|
+| The seeded prompt | "should i rebase or merge?" contains `rebase`, so the case scored its own `expected_terms` before the agent answered. |
+| Tool-call arguments | An agent that greps for a phrase from the prompt writes that phrase into the argument record. |
+| Tool results | A skill tool's result **is** the skill body, so every canonical term matched the moment the skill loaded, and the answer judge became a second copy of the routing judge. |
+
+Set `EVAL_TERM_SCOPE=transcript` to put tool results back in. That is worth a
+run when you want to know whether the content was in front of the model at all,
+rather than whether the agent used it. Compare the two numbers to find cases
+that were only ever passing on a skill-body echo.
+
+Both judges are asserted with `threshold: null`, so neither one fails a case by
+itself — each sample's score goes into the report instead. **The build gates on
+the hit rate across samples**, asserted at the end of the test:
+
+| Case | Answer score | Routing score |
+|---|---|---|
+| `should_satisfy: true` | gates | recorded only |
+| `should_satisfy: false` | gates | **gates** |
+
+Positive-case routing records rather than gates because `common/CLAUDE.md`
+restates several skills — its design-token and `@op/sense` import rules are
+`sense-conventions` almost verbatim. That text sits in context on every turn, so
+the agent answers correctly without ever loading the skill, and routing scores 0
+on a run that did nothing wrong. A right answer through ambient context is not a
+regression.
+
+Read those scores anyway. A skill with a high answer score and a floor-level
 routing score is a skill whose content already lives in `CLAUDE.md`. That
 duplication costs context on every turn and gives you two copies to drift apart —
 deleting it from `CLAUDE.md` and letting the skill own it is the usual fix.
 
-The harness passes `--plugin-dir plugins/devtools`, so an eval scores the skills
-in your working tree. You do not need to install or re-sync the plugin.
+Negative-case routing does gate, because there is no benign reason for an
+unrelated prompt to load the skill. It is graded on strong evidence only: a
+skill-tool call or a direct read of the `SKILL.md`. A mention of the path in a
+`Grep` argument earns a positive case its point but never fails a negative one,
+so broad exploration cannot make the gate flaky.
 
-`retry: 1` gives each case two attempts. That is the vitest equivalent of the
-Python auditors' two-runs-per-query rule, and it keeps one unlucky sample from
-failing a healthy skill.
+At one sample, `retry: 1` gives each case two attempts. That is the vitest
+equivalent of the Python auditors' two-runs-per-query rule, and it keeps one
+unlucky sample from failing a healthy skill. Above one sample the hit rate
+already absorbs an unlucky draw, so the retry turns off.
+
+### Agents
+
+`EVAL_AGENT` picks the runtime. Both agents load the skills from your working
+tree, so an eval scores what you just edited with no install or re-sync step,
+and both run the same 114 cases with no change to the eval sets.
+
+| Agent | How skills load | Tool policy |
+|---|---|---|
+| `claude-code` (default) | `--plugin-dir plugins/devtools` | `--allowed-tools` for `Skill`, `Read`, `Glob`, `Grep`, `TodoWrite`; `--disallowed-tools` for `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Task`, `Agent`. A denylist, so check it when the CLI ships a new tool — `--allowed-tools` alone pre-approves the tools it names and leaves every other tool available. |
+| `pi` | `--no-skills --skill plugins/devtools/skills` | `--tools read,grep,find,ls`. A real allowlist covering built-in, extension, and custom tools, so `bash`, `edit`, and `write` stay out of reach. |
+
+The two agents differ in one way the judges have to know about: pi has no skill
+tool. It puts every skill's name and description in the system prompt and the
+model loads one by `read`ing its `SKILL.md`. Each harness therefore declares a
+`ToolProfile` naming its skill tool and its read tools, and the routing judge
+scores against that rather than against hard-coded names. Adding a third runtime
+means adding a harness and a profile — the eval sets and the judges do not change.
+
+The pi run is deliberately hermetic. `--no-skills` with an explicit `--skill`
+path means nothing from `~/.pi/agent/skills` or `~/.agents/skills` can answer a
+prompt on a devtools skill's behalf, and `--no-extensions`,
+`--no-prompt-templates`, and `--no-approve` make the same promise for the other
+resource kinds. `AGENTS.md` and `CLAUDE.md` discovery stays on, because Claude
+Code always loads `CLAUDE.md` and the two agents' scores are only comparable if
+both see the target repo's ambient context.
+
+```bash
+# Claude Code, the default
+EVAL_CWD=~/oneproject/common pnpm evals
+
+# pi against a cloud provider
+pi auth check --provider openai-codex
+EVAL_AGENT=pi EVAL_PROVIDER=openai-codex EVAL_MODEL=gpt-5.4-mini \
+  EVAL_CWD=~/oneproject/common pnpm evals
+```
+
+Naming a provider makes the suite run `pi auth check` before any case does.
+A provider whose credentials are not configured skips the suite with pi's own
+reason, instead of spending 114 turns to report 114 zero scores that say nothing
+about the skills.
+
+### A local model via `llama-server`
+
+pi resolves a provider's base URL from its own `models.json`, so a local model
+needs no endpoint configuration here — name the provider and the model it
+serves. Start `llama-server` in router mode, confirm pi sees the model, then run:
+
+```bash
+llama-server --models-dir ~/models --host 127.0.0.1 --port 8080
+pi --list-models | grep llama-cpp
+
+EVAL_AGENT=pi EVAL_PROVIDER=llama-cpp \
+  EVAL_MODEL='unsloth/Qwen3.6-35B-A3B-GGUF:Q8_0' \
+  EVAL_CWD=~/oneproject/common pnpm evals
+```
+
+Naming a local provider changes two defaults. The suite probes
+`<base URL>/models` before any case runs and skips the whole suite with the URL
+in the message when nothing answers, rather than burning the full timeout on
+each of 114 cases. And `EVAL_CONCURRENCY` drops to 1, because a local server
+answers one prompt at a time and concurrent prompts would only queue past the
+timeout. `EVAL_BASE_URL` overrides the probed URL for a provider the defaults do
+not know.
+
+Measured on an M5 Max (64 GB) with `Qwen3.6-35B-A3B-Q8_0`, 34 GB of weights:
+
+| | |
+|---|---|
+| Prefill | 2,151 tok/s |
+| Decode | 84 tok/s |
+| One skill, 8 cases, concurrency 1 | 2 min 43 s — 20 s per case |
+| Full 114-case set, extrapolated | **about 38 minutes** |
+| Dollar cost | electricity only, a cent or two per run |
+| Resident memory | 40 GB while the server is up |
+
+Two settings matter, and both were measured rather than assumed:
+
+- **Leave `EVAL_CONCURRENCY` at 1.** The same 8 cases at concurrency 4 took
+  4 min 58 s — 1.8x *slower*. One request already saturates the GPU, so parallel
+  prompts divide the same throughput, and the two heaviest cases hit the 240 s
+  timeout instead of finishing in 58 s.
+- **Give each slot at least 64k of context.** At `--ctx-size 32768` the heaviest
+  case overflowed: `request (33723 tokens) exceeds the available context size`.
+  `--ctx-size` is divided across `--parallel` slots, so
+  `--ctx-size 262144 --parallel 4` is what yields 64k each.
+
+```bash
+llama-server -m ~/models/Qwen3.6-35B-A3B-Q8_0.gguf \
+  --host 127.0.0.1 --port 8080 --ctx-size 262144 --parallel 4 --jinja
+```
+
+`--jinja` is not optional. Without it llama.cpp does not apply the model's
+tool-call template, and an agent with no working tools cannot read a `SKILL.md`.
+
+Expect lower scores than a frontier model, and read them as two separate
+measurements. A local model that scores well on answers but badly on routing is
+telling you the skill descriptions are not carrying it to the right skill — which
+is a fixable defect in the description. A model that routes correctly and still
+answers badly has loaded the skill and failed to follow it, which is a fact about
+the model, not about the skill.
+
+### Environment
 
 | Variable | Default | Effect |
 |---|---|---|
-| `EVAL_MODEL` | `claude-sonnet-5` | Model under test. Haiku answers skill-shaped prompts from general knowledge instead of loading the skill, so it reports routing failures the real harness does not have. |
+| `EVAL_AGENT` | `claude-code` | Runtime under test: `claude-code` or `pi`. |
+| `EVAL_MODEL` | Sonnet 5 for `claude-code`, pi's own default for `pi` | Model under test. Haiku answers skill-shaped prompts from general knowledge instead of loading the skill, so it reports routing failures the real harness does not have. |
+| `EVAL_PROVIDER` | unset | Provider passed to `pi --provider`. Name a local provider — `llama-cpp`, `lm-studio`, `ollama` — to run against a local model. Ignored by `claude-code`. |
+| `EVAL_BASE_URL` | derived from `EVAL_PROVIDER` | Health-check URL for a local model server. Set it for a provider the defaults do not cover. |
 | `EVAL_CWD` | this repo | **Set this.** Directory the agent runs in; point it at a `common` checkout. The prompts name paths like `packages/common` and workspaces like `api`, so anywhere else the agent reports that it cannot find them and asks for a path instead of loading the skill. That scores as a routing failure the real harness does not have. |
-| `EVAL_CONCURRENCY` | `4` | Prompts in flight at once. |
-| `EVAL_TIMEOUT_MS` | `240000` | Wall-clock cap per prompt. |
+| `EVAL_SAMPLES` | `1` | Runs per case. Above 1, the case is graded on its hit rate. |
+| `EVAL_PASS_RATE` | `0.5` | Fraction of samples a gated score must pass. |
+| `EVAL_TERM_SCOPE` | `answer` | Where `expected_terms` match. `transcript` also searches tool results. |
+| `EVAL_CONCURRENCY` | `4`, or `1` against a local server | Prompts in flight at once. |
+| `EVAL_TIMEOUT_MS` | `240000` | Wall-clock cap per prompt. The vitest per-test cap is derived from this and `EVAL_SAMPLES`, so raising it no longer lets vitest kill a run before the harness timer fires. |
+| `EVAL_SKILLS` | all | Comma-separated skill names to run. The cost lever for CI: a PR that touches one skill runs its cases, not all 114. A name matching no eval set throws. |
+| `EVAL_REPORT_FILE` | `.vitest-evals/report-<agent>.json` | JSON report path. One file per agent, so a pi run does not overwrite a Claude Code run. |
 
-```bash
-EVAL_CWD=~/oneproject/common pnpm evals
-```
+A malformed value throws rather than falling back to the default, so a typo
+cannot quietly turn the suite into a no-op — including a misspelled `EVAL_AGENT`,
+which names the thing under test.
 
 Run one skill with `-t "skill: branch-and-pr"`, or one case with `-t "<part of
 the query>"`. Inspect a finished run in the browser with
-`pnpm evals:ui .vitest-evals/report.json`.
+`pnpm evals:ui .vitest-evals/report-claude-code.json`.
 
-The harness denies `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`,
-`WebSearch`, and `Task` through `--disallowed-tools`, so an eval cannot mutate
-the checkout or reach the network. `--allowed-tools` does not do this on its own
-— it pre-approves the tools it names and leaves every other tool available.
+### GitHub Actions
+
+Three workflows, split the same way the suites are — by cost.
+
+| Workflow | Trigger | What it runs | Cost |
+|---|---|---|---|
+| `test.yml` | every push and PR | `pnpm typecheck` + `pnpm test` | Actions minutes only |
+| `evals.yml` | PR, weekly cron, manual | evals for the skills the PR touched; the full set on the cron | one agent turn per case |
+| `evals-local.yml` | manual, self-hosted runner | the full set through pi against a local `llama-server` | Actions minutes only |
+
+A full run is not something to put on a pull request. Measured on the 114-case
+set with Sonnet 5: **$22.27 total, $0.195 per case on average, $0.87 for the
+worst one.** So `evals.yml` derives the skills to run from the diff — a skill's
+own files and its eval set both select it, and a change under `evals/` selects
+everything because it changes the harness. A PR touching one skill runs its 8 to
+14 cases for about $1.60 and finishes in a couple of minutes.
+
+`EVAL_SKILLS` is what does the narrowing, and it works locally too:
+
+```bash
+EVAL_SKILLS=branch-and-pr,release EVAL_CWD=~/oneproject/common pnpm evals
+```
+
+A name that matches no eval set throws. CI derives that list from a diff, so a
+rename that stops matching has to fail loudly rather than report a green run of
+zero cases.
+
+#### Reaching a model from CI
+
+The harness spawns the `claude` CLI, so CI needs the CLI plus a credential in
+the environment. Four options, cheapest first:
+
+| Route | Credential | Marginal cost |
+|---|---|---|
+| Self-hosted runner + `llama-server` | none | **$0** — local inference, `evals-local.yml` |
+| Claude subscription token | `CLAUDE_CODE_OAUTH_TOKEN` | none per token; consumes the plan's rate limits |
+| Claude API key | `ANTHROPIC_API_KEY` | per token, at the rates above |
+| Bedrock / Vertex / Foundry | OIDC federation, `CLAUDE_CODE_USE_BEDROCK` and friends | per token, billed to that cloud account |
+
+The subscription token is the cheap route for Claude Code. Generate a one-year
+token with `claude setup-token`, store it as the `CLAUDE_CODE_OAUTH_TOKEN`
+repository secret, and runs bill against your Pro, Max, Team, or Enterprise plan
+instead of per token. It only makes model requests, which is all the harness
+needs. Budget it against the plan's rate limits rather than a dollar figure: a
+full 114-case run is real usage, so keep it on the weekly cron rather than
+per-PR even when the marginal dollar cost is zero.
+
+The free route is `evals-local.yml`. It needs a self-hosted runner labelled
+`llama` with `pi` and `llama-server` installed and a `llama-cpp` provider in its
+`~/.pi/agent/models.json` — the same setup described above. Inference costs
+nothing there, so the full set is its default. Until that runner is registered
+the workflow is dispatch-only and simply has nowhere to run, so nothing fails in
+the meantime.
+
+Do **not** buy cost savings by downgrading the model. Haiku answers
+skill-shaped prompts from general knowledge instead of loading the skill, so it
+reports routing failures the model your engineers actually run does not have.
+A cheaper model changes what the numbers mean; a smaller case selection does not.
+
+#### Two things the eval workflows need
+
+**A checkout of the monorepo under test.** The prompts name paths like
+`packages/common` and workspaces like `api`, so `EVAL_CWD` has to point at a
+`common` checkout or the agent asks for a path instead of loading the skill.
+Both eval workflows check that repository out to `common/` with a
+`COMMON_REPO_TOKEN` secret — a PAT or GitHub App token with read access. Without
+it the evals still run, but every routing score is meaningless.
+
+**Short artifact retention.** A report embeds prompts, answers, and file
+excerpts from the private monorepo, which is also why `.vitest-evals/` is
+gitignored. The workflows upload it with `retention-days: 7`.
+
+One more thing the workflows do deliberately: they run every case in **one job**
+rather than a matrix. Each case shares a long system-prompt prefix — the skill
+listing, the system prompt, the target repo's `CLAUDE.md` — and prompt caching
+is doing most of the work in that $0.195 average. Sharding across jobs makes
+every shard pay for a cold cache.
 
 ### Sampling for a rate
 
@@ -224,6 +438,7 @@ are distinguishable. `EVAL_PASS_RATE` sets the bar (default `0.5`).
 At one sample the suite retries once, so an unlucky draw does not fail a healthy
 skill. Above one sample the hit rate already absorbs that, so the retry is off and
 a run costs exactly `EVAL_SAMPLES` turns per case.
+
 
 ## License
 

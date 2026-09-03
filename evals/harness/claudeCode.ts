@@ -1,5 +1,5 @@
 /**
- * vitest-evals harness that runs one prompt through headless Claude Code.
+ * Harness that runs one prompt through headless Claude Code.
  *
  * `--plugin-dir` points at `plugins/devtools/` in this checkout, so an eval
  * exercises the skills you just edited. No `sync-to-cache.sh` step, and no
@@ -8,9 +8,12 @@
  * Every tool call and tool result becomes a transcript event, which is what
  * lets the judges see how the agent got to its answer.
  */
-import { spawn, spawnSync } from "node:child_process";
-import { createHarness, toJsonValue, type JsonValue, type TranscriptEvent } from "vitest-evals";
+import { createHarness, type TranscriptEvent } from "vitest-evals";
+import { evalSettings } from "../env.js";
 import { PLUGIN_DIR, REPO_ROOT } from "../skills.js";
+import { hasCli, spawnLineStream } from "./spawnStream.js";
+import { asRecord, stringifyToolResult, toArguments } from "./transcript.js";
+import type { AgentHarness, AgentOutput, ToolProfile } from "./types.js";
 
 /**
  * Model used unless `EVAL_MODEL` overrides it.
@@ -29,6 +32,10 @@ const ALLOWED_TOOLS = ["Skill", "Read", "Glob", "Grep", "TodoWrite"];
  *
  * `--allowed-tools` alone does not do this. It pre-approves the tools it names
  * and leaves every other tool available, so the agent still reaches for Bash.
+ *
+ * This is a denylist, so a tool Claude Code adds later is allowed until someone
+ * adds it here. Read-only is the intent; check this list when the CLI ships a
+ * new tool.
  */
 const DISALLOWED_TOOLS = [
   "Bash",
@@ -41,18 +48,10 @@ const DISALLOWED_TOOLS = [
   "Agent",
 ];
 
-/** Tool results are truncated to this many characters before entering the transcript. */
-const MAX_TOOL_RESULT_CHARS = 4000;
-
-const DEFAULT_TIMEOUT_MS = 240_000;
-
-export type ClaudeCodeOutput = {
-  /** The agent's final answer text. Empty when the run produced none. */
-  answer: string;
-  /** True when Claude Code reported the turn as failed. */
-  isError: boolean;
-  /** `"timeout"`, `"exit"`, or the CLI's own `subtype`. */
-  reason: string;
+/** Claude Code loads a skill through the `Skill` tool, and reads files with `Read`. */
+export const CLAUDE_CODE_TOOL_PROFILE: ToolProfile = {
+  skillTool: { name: "Skill", arg: "skill" },
+  readTools: { names: ["Read"], pathArgs: ["file_path"] },
 };
 
 /** One line of `--output-format stream-json`. Only the fields we read are typed. */
@@ -64,42 +63,13 @@ type StreamEvent = {
   is_error?: boolean;
   total_cost_usd?: number;
   num_turns?: number;
-  usage?: { input_tokens?: number; output_tokens?: number };
-  modelUsage?: Record<string, unknown>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 };
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-/** Coerces a tool's raw input into the JSON-safe argument record transcripts want. */
-function toArguments(value: unknown): Record<string, JsonValue> | undefined {
-  const record = asRecord(value);
-  if (!record) return undefined;
-  const result: Record<string, JsonValue> = {};
-  for (const [key, raw] of Object.entries(record)) {
-    const json = toJsonValue(raw);
-    if (json !== undefined) result[key] = json;
-  }
-  return result;
-}
-
-function stringifyToolResult(content: unknown): string {
-  if (typeof content === "string") return content.slice(0, MAX_TOOL_RESULT_CHARS);
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        const record = asRecord(part);
-        return record?.type === "text" && typeof record.text === "string" ? record.text : "";
-      })
-      .filter(Boolean)
-      .join("\n");
-    return text.slice(0, MAX_TOOL_RESULT_CHARS);
-  }
-  return JSON.stringify(content ?? null).slice(0, MAX_TOOL_RESULT_CHARS);
-}
 
 type ParsedStream = {
   events: TranscriptEvent[];
@@ -109,6 +79,8 @@ type ParsedStream = {
   costUsd?: number;
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   toolCallCount: number;
 };
 
@@ -116,7 +88,7 @@ type ParsedStream = {
  * Folds the stream into transcript events.
  *
  * Called incrementally so a timed-out run still reports the trajectory it got
- * through — that trail is usually what tells you why the skill did not load.
+ * through.
  */
 function createStreamParser(prompt: string): {
   push: (line: string) => void;
@@ -129,7 +101,11 @@ function createStreamParser(prompt: string): {
   let costUsd: number | undefined;
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let cacheReadTokens: number | undefined;
+  let cacheWriteTokens: number | undefined;
   let toolCallCount = 0;
+  /** Tool-call id to tool name, so a result knows which tool produced it. */
+  const toolNames = new Map<string, string>();
 
   const push = (line: string) => {
     const trimmed = line.trim();
@@ -147,9 +123,11 @@ function createStreamParser(prompt: string): {
         const record = asRecord(part);
         if (record?.type === "tool_use" && typeof record.name === "string") {
           toolCallCount += 1;
+          const id = typeof record.id === "string" ? record.id : `call_${toolCallCount}`;
+          toolNames.set(id, record.name);
           events.push({
             type: "tool_call",
-            id: typeof record.id === "string" ? record.id : `call_${toolCallCount}`,
+            id,
             name: record.name,
             arguments: toArguments(record.input),
           });
@@ -164,9 +142,11 @@ function createStreamParser(prompt: string): {
       for (const part of event.message?.content ?? []) {
         const record = asRecord(part);
         if (record?.type !== "tool_result") continue;
+        const toolCallId = typeof record.tool_use_id === "string" ? record.tool_use_id : "unknown";
         events.push({
           type: "tool_result",
-          toolCallId: typeof record.tool_use_id === "string" ? record.tool_use_id : "unknown",
+          toolCallId,
+          name: toolNames.get(toolCallId),
           content: stringifyToolResult(record.content),
         });
       }
@@ -178,7 +158,15 @@ function createStreamParser(prompt: string): {
       isError = event.is_error === true;
       cliReason = event.subtype;
       costUsd = event.total_cost_usd;
-      inputTokens = event.usage?.input_tokens;
+      // `input_tokens` counts uncached input only, which averages single
+      // digits once the prompt cache is warm. The cached prefix is the real
+      // prompt volume — the number to size a local run against — so total it.
+      cacheReadTokens = event.usage?.cache_read_input_tokens;
+      cacheWriteTokens = event.usage?.cache_creation_input_tokens;
+      inputTokens =
+        (event.usage?.input_tokens ?? 0) +
+        (cacheReadTokens ?? 0) +
+        (cacheWriteTokens ?? 0);
       outputTokens = event.usage?.output_tokens;
     }
   };
@@ -191,16 +179,17 @@ function createStreamParser(prompt: string): {
     costUsd,
     inputTokens,
     outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
     toolCallCount,
   });
 
   return { push, finish };
 }
 
-/** True when the `claude` CLI resolves on PATH. Backs the suite-level `skipIf`. */
+/** True when the `claude` CLI resolves on PATH. Backs the agent's availability check. */
 export function hasClaudeCli(): boolean {
-  const probe = spawnSync("claude", ["--version"], { stdio: "ignore" });
-  return probe.error === undefined && probe.status === 0;
+  return hasCli("claude");
 }
 
 export type ClaudeCodeHarnessOptions = {
@@ -229,13 +218,12 @@ export type ClaudeCodeHarnessOptions = {
  * turn comes back as a run with an empty answer, so the judges score it 0 and
  * the report keeps the partial trajectory.
  */
-export function claudeCodeHarness(options: ClaudeCodeHarnessOptions = {}) {
-  const model = options.model ?? process.env.EVAL_MODEL ?? DEFAULT_MODEL;
-  const timeoutMs =
-    options.timeoutMs ?? Number(process.env.EVAL_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
-  const cwd = options.cwd ?? process.env.EVAL_CWD ?? REPO_ROOT;
+export function claudeCodeHarness(options: ClaudeCodeHarnessOptions = {}): AgentHarness {
+  const model = options.model ?? evalSettings.model ?? DEFAULT_MODEL;
+  const timeoutMs = options.timeoutMs ?? evalSettings.timeoutMs;
+  const cwd = options.cwd ?? evalSettings.cwd ?? REPO_ROOT;
 
-  if (!options.cwd && !process.env.EVAL_CWD) {
+  if (options.cwd === undefined && evalSettings.cwd === undefined) {
     console.warn(
       "[evals] EVAL_CWD is unset, so prompts that name paths in the common monorepo " +
         `run against ${REPO_ROOT} and will under-report routing. ` +
@@ -243,88 +231,37 @@ export function claudeCodeHarness(options: ClaudeCodeHarnessOptions = {}) {
     );
   }
 
-  return createHarness<string, ClaudeCodeOutput>({
+  return createHarness<string, AgentOutput>({
     name: `claude-code(${model})`,
     run: async ({ input, signal, setArtifact }) => {
       const parser = createStreamParser(input);
-      const args = [
-        "-p",
-        input,
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--model",
-        model,
-        "--plugin-dir",
-        PLUGIN_DIR,
-        "--strict-mcp-config",
-        "--allowed-tools",
-        ...ALLOWED_TOOLS,
-        "--disallowed-tools",
-        ...DISALLOWED_TOOLS,
-      ];
-
-      // A nested Claude Code run inherits these and refuses to start.
-      const env = { ...process.env };
-      delete env.CLAUDECODE;
-      delete env.CLAUDE_CODE_ENTRYPOINT;
-
-      const reason = await new Promise<string>((resolve) => {
-        const child = spawn("claude", args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
-        let stdoutTail = "";
-        let stderrTail = "";
-        let settled = false;
-
-        // Flushes the partial line before resolving, so a killed run keeps the
-        // last event it managed to emit.
-        const settle = (value: string) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          signal?.removeEventListener("abort", onAbort);
-          if (stdoutTail) {
-            parser.push(stdoutTail);
-            stdoutTail = "";
-          }
-          resolve(value);
-        };
-
-        const timer = setTimeout(() => {
-          child.kill("SIGKILL");
-          settle("timeout");
-        }, timeoutMs);
-
-        const onAbort = () => {
-          child.kill("SIGKILL");
-          settle("aborted");
-        };
-        signal?.addEventListener("abort", onAbort, { once: true });
-
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          stdoutTail += chunk;
-          const lines = stdoutTail.split("\n");
-          stdoutTail = lines.pop() ?? "";
-          for (const line of lines) parser.push(line);
-        });
-
-        child.stderr.setEncoding("utf8");
-        child.stderr.on("data", (chunk: string) => {
-          stderrTail = (stderrTail + chunk).slice(-2000);
-        });
-
-        child.on("error", (error) => {
-          setArtifact("spawnError", error.message);
-          settle("spawn-error");
-        });
-
-        child.on("close", (code) => {
-          if (code !== 0) setArtifact("stderrTail", stderrTail);
-          settle(code === 0 ? "exit-0" : `exit-${code}`);
-        });
+      const reason = await spawnLineStream({
+        command: "claude",
+        args: [
+          "-p",
+          input,
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--model",
+          model,
+          "--plugin-dir",
+          PLUGIN_DIR,
+          "--strict-mcp-config",
+          "--allowed-tools",
+          ...ALLOWED_TOOLS,
+          "--disallowed-tools",
+          ...DISALLOWED_TOOLS,
+        ],
+        cwd,
+        timeoutMs,
+        signal,
+        onLine: parser.push,
+        setArtifact,
       });
 
       const parsed = parser.finish(reason);
+      setArtifact("agent", "claude-code");
       setArtifact("model", model);
       setArtifact("cwd", cwd);
       if (parsed.costUsd !== undefined) setArtifact("costUsd", parsed.costUsd);
@@ -338,7 +275,15 @@ export function claudeCodeHarness(options: ClaudeCodeHarnessOptions = {}) {
           inputTokens: parsed.inputTokens,
           outputTokens: parsed.outputTokens,
           toolCalls: parsed.toolCallCount,
-          metadata: parsed.costUsd === undefined ? undefined : { costUsd: parsed.costUsd },
+          metadata: {
+            ...(parsed.costUsd === undefined ? {} : { costUsd: parsed.costUsd }),
+            ...(parsed.cacheReadTokens === undefined
+              ? {}
+              : { cacheReadTokens: parsed.cacheReadTokens }),
+            ...(parsed.cacheWriteTokens === undefined
+              ? {}
+              : { cacheWriteTokens: parsed.cacheWriteTokens }),
+          },
         },
       };
     },
