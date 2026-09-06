@@ -1,6 +1,6 @@
 ---
 name: drizzle-migrations
-description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. A data backfill is NOT a migration (ship it as a standalone ops script); a unique index must cover every column its JS guard covers; prefer a concrete per-entity edge table over a polymorphic one whose "both ends are proposals" invariant no foreign key can express; and keep a relationship row rather than cascading it away when its absence still has to be displayed. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), use $inferSelect for row types, and always give findFirst a filter that identifies exactly one row (a non-unique column silently returns the wrong one). Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
+description: Drizzle ORM workflow — edit schema files under services/db/schema/, run pnpm w:db generate, read the generated SQL, never apply with migrate. A data backfill is NOT a migration (ship it as a standalone ops script); a unique index must cover every column its JS guard covers; don't restate a column supabase auth already owns (phone, email, *_confirmed_at) and read the auth email rather than profileUsers.email, which is never synced after creation; a specific table beats a speculative generic one because ADD COLUMN type stays available later while splitting a populated generic table does not; prefer a concrete per-entity edge table over a polymorphic one whose "both ends are proposals" invariant no foreign key can express; and keep a relationship row rather than cascading it away when its absence still has to be displayed. Plus query conventions — prefer db.query.X (Relational Queries / RBQ v2) over imperative db.select().from().where(), use $inferSelect for row types, and always give findFirst a filter that identifies exactly one row (a non-unique column silently returns the wrong one). Use when touching services/db, adding/dropping columns, renaming, creating a new table, or writing a service-layer query.
 ---
 
 ## Where things live
@@ -44,6 +44,22 @@ The resolution is to stop being generic: the table that shipped is keyed on `pro
 ### Keep the edge when it determines how the row is presented
 
 Before setting `ON DELETE CASCADE` on a relationship, ask whether the *absence* of the far end still needs to be displayed. PR #1761 (scazan): *"if the relationship determines anything about how the proposal shows up, we want that to persist with a dangling relationship so we can still present it (for instance, if merged from another proposal, we still want to display that history or if a proposal was merged into another, we need to flag that it is missing where it was merged to). A simple example would be a GDPR deletion request."* A cascade that tidies the graph also erases the reason a proposal disappeared from a pipeline. Pair the retained edge with a column on the row that consumers can key off (a merged-away marker) so reads don't have to walk the graph to learn the row should be hidden.
+
+### Don't restate a column Supabase auth already owns
+
+`auth.users` already holds `phone`, `email`, `phone_confirmed_at` and `email_confirmed_at`. A new table that copies one of them owns a second copy that can drift, and it has to be kept in sync by a trigger nobody remembers. PR #1951 review on `phoneVerifications`: *"We might not need to store the phone over here as it is stored also in the auth table. I guess I wonder whether or not we want to duplicate this from the auth table if so. Is this duplicating the `confirmed_at` field that's already in the supabase auth table?"* Reference the auth row and read through it; store a column here only when this table's copy means something the auth column doesn't (a value at the time of an event, a field the auth row lets the user reset).
+
+### Specific table now, generic table later — the migration costs aren't symmetric
+
+The reflex on a channel-specific table is to reach for the general shape: *"I'd be curious if it makes more sense to keep this as simply `verifications` or `auth_verifications` and we type it as phone, email, WhatsApp, etc. Might be more extensible without the specificity of phone here."* (#1951). Both answers are defensible, and the tiebreaker is which direction is cheap later:
+
+> *"`ADD COLUMN type NOT NULL DEFAULT 'phone'` stays available later, while splitting a generic table once it holds rows does not."* (#1956)
+
+The other half of that thread is worth copying too: the extensibility argument only holds if the *writer* generalizes. A trigger reading `NEW.phone_confirmed_at` and an email equivalent reading different columns means one table with two triggers, not one mechanism. Ask what the generic version actually shares before you name it generically — and when a table names a channel, decide before the migration is applied, because a name and a column set are cheap to change now and a second migration later.
+
+### Read the auth email, not `profileUsers.email`
+
+`profileUsers.email` is written at creation and **never synced after**, so it goes stale the moment a user changes their address and is null for anyone who never supplied one. It exists for join-free lookups in search and for stored vectors — not as a way to reach a person. PR #1919: *"we should be relying on the auth email for now rather than the profileUser email, which is never synced after creation. That column should probably go away either way."* Confirmed again on #1886: *"now that I've looked, `profileUser.email` was ONLY used for faster lookups without joins in search as well as stored vectors. We shouldn't rely on it here."* Anything that sends, notifies, or identifies goes through the auth user. (This is the same shape as *don't disambiguate on a column the write path leaves empty* in `service-layer-structure`.)
 
 ### A data backfill is not a migration
 

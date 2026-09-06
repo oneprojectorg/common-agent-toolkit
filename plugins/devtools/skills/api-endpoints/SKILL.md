@@ -1,6 +1,6 @@
 ---
 name: api-endpoints
-description: How to add or change a tRPC API endpoint in services/api — one procedure per file merged with mergeRouters, the 4-tier procedure model (networkAuthenticatedProcedure / authenticatedConfirmedProcedure / authenticatedProcedure / openProcedure), Zod .input() from @op/common/client schemas, .output() via encoders, schemas live in @op/common (never hand-rolled DTOs), types consumed via @op/api/encoders (never RouterOutput), thin routers that delegate to @op/common services, and realtime channel registration instead of manual invalidation. Input-schema traps — an optional id-like string needs .min(1) or '' collides with a NULL sentinel, and narrowing an output enum breaks decode of existing rows without a .catch() fallback. Use when adding/editing a query or mutation, a router, an encoder, writing or tightening an input schema, picking the right procedure factory, or wiring auth/channels.
+description: How to add or change a tRPC API endpoint in services/api — one procedure per file merged with mergeRouters, the 4-tier procedure model (networkAuthenticatedProcedure / authenticatedConfirmedProcedure / authenticatedProcedure / openProcedure), Zod .input() from @op/common/client schemas, .output() via encoders, schemas live in @op/common (never hand-rolled DTOs), types consumed via @op/api/encoders (never RouterOutput), thin routers that delegate to @op/common services, and realtime channel registration instead of manual invalidation. Input-schema traps — an optional id-like string needs .min(1) or '' collides with a NULL sentinel, and narrowing an output enum breaks decode of existing rows without a .catch() fallback. Compose list inputs from the shared paginationSchema / createSortable / createPaginatedOutput builders in services/api/src/utils rather than re-declaring cursor, limit and sort per endpoint. Use when adding/editing a query or mutation, a router, an encoder, writing or tightening an input schema, picking the right procedure factory, or wiring auth/channels.
 ---
 
 ## Where things live
@@ -113,6 +113,13 @@ import { collectionSchema, createCollection } from '@op/common';
 ```
 
 **Evolve existing input schemas additively.** A new field on an already-shipped input schema should be optional, and its JSDoc/comment must state what an *absent* value means so pre-existing callers and data keep working through a defined fallback. PR #1532: `'x-phase'?: string` — "When absent, the form applies to the process's initial (submission) phase"; `getForProfile` added optional `phaseId` / `initialPhaseId` documented as legacy, phase-agnostic behavior. Don't make a new field required (it breaks old callers) or leave empty-value semantics implicit.
+
+**Compose a list endpoint's input from the shared builders in `services/api/src/utils/index.ts`, don't re-declare cursor / limit / sort.** `paginationSchema` (`cursor: z.string().nullish()`, `limit: z.number().min(1).max(PAGE_LIMIT.max).default(25)`), `createSortable([...])`, `sortDir` and `createPaginatedOutput(itemSchema)` already exist; merge them rather than hand-listing the same three fields with a different bound each time. PR #1968 review, on the `limit` line: *"This would be a good default for most API inputs."* A hand-rolled `limit: z.number().optional()` is how one endpoint ends up unbounded while its siblings cap at 25.
+
+```ts
+const inputSchema = z.object({ profileId: z.string() }).merge(paginationSchema);
+const outputSchema = createPaginatedOutput(proposalEncoder);
+```
 
 **An optional id-like string input needs `.min(1)` — `''` is not "absent".** `z.string().optional()` accepts the empty string, which then flows into the query as a real value: `WHERE phase_id = ''` instead of `IS NULL`. Where the column uses NULL as a sentinel and a `COALESCE(phase_id, '')` unique index, the two representations collide in the index but not in the application — `COALESCE('', '') = COALESCE(NULL, '') = ''`, so an insert hits `ON CONFLICT DO NOTHING` against the existing NULL row while the follow-up `WHERE phase_id = ''` finds nothing and throws a spurious `NotFoundError`. The read and delete siblings fail the same way, silently returning zero rows / `{ removed: false }`.
 
