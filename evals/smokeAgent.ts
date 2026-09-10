@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import { getEnvApiKey, type AssistantMessage, type Model } from "@mariozechner/pi-ai";
 import type { PiAiRuntime, PiAiToolset } from "@vitest-evals/harness-pi-ai";
 
-// The provider key to read from the local pi agent config. Override with
+// The provider key to read from the local pi agent config. The default is the
+// local llama-server (key "llama-cpp", 127.0.0.1:8080). Override with
 // EVAL_PI_PROVIDER to point the smoke agent at a different registered model.
-const PROVIDER_KEY = process.env.EVAL_PI_PROVIDER ?? "hf-qwen3-8-27b";
+const PROVIDER_KEY = process.env.EVAL_PI_PROVIDER ?? "llama-cpp";
 const PI_MODELS_JSON = join(homedir(), ".pi", "agent", "models.json");
 
 const SYSTEM_PROMPT =
@@ -16,14 +17,20 @@ const SYSTEM_PROMPT =
 type PiModelsConfig = {
   providers: Record<
     string,
-    { baseUrl: string; models: { id: string; name?: string }[] }
+    {
+      baseUrl: string;
+      apiKey?: string;
+      models: { id: string; name?: string }[];
+    }
   >;
 };
 
 /**
  * Build an OpenAI-compatible pi-ai Model from the local pi agent config
- * (~/.pi/agent/models.json). The auth token resolves from HF_TOKEN via the
- * "huggingface" provider mapping in pi-ai's env-api-keys table.
+ * (~/.pi/agent/models.json). pi-ai resolves the API key from Model.provider
+ * via its env table, so the provider name is chosen from the config's apiKey:
+ * "$HF_TOKEN" maps to "huggingface" (reads HF_TOKEN); any other key is a
+ * local, no-auth server and maps to itself, which resolves to no key.
  */
 function buildModel(): Model<"openai-completions"> {
   const config = JSON.parse(
@@ -41,8 +48,7 @@ function buildModel(): Model<"openai-completions"> {
     id: model.id,
     name: model.name ?? model.id,
     api: "openai-completions",
-    // pi-ai maps the "huggingface" provider to the HF_TOKEN env var.
-    provider: "huggingface",
+    provider: provider.apiKey === "$HF_TOKEN" ? "huggingface" : PROVIDER_KEY,
     baseUrl: provider.baseUrl,
     reasoning: false,
     input: ["text"],
@@ -70,6 +76,11 @@ export class SmokeAgent {
         tools: [],
       },
       toolExecution: "sequential",
+      // pi-ai aborts a stream when a provider resolves to no API key. A local,
+      // no-auth server (e.g. llama.cpp) still needs a non-empty key to pass that
+      // check, and the server ignores the value. Use the provider's real env key
+      // when one is set (e.g. HF_TOKEN); otherwise fall back to a placeholder.
+      getApiKey: (provider) => getEnvApiKey(provider) ?? "none",
     });
   }
 
@@ -82,7 +93,16 @@ export class SmokeAgent {
     }
     const text = getAssistantText(assistant);
     if (!text) {
-      throw new Error("Smoke agent returned an empty final response.");
+      // An assistant message with no text usually means the model call errored
+      // before producing content. Surface the provider's stop reason and error
+      // so the failure is diagnosable instead of generic.
+      const detail =
+        assistant.errorMessage !== undefined
+          ? ` (stopReason=${assistant.stopReason}: ${assistant.errorMessage})`
+          : ` (stopReason=${assistant.stopReason})`;
+      throw new Error(
+        `Smoke agent returned an empty final response${detail}.`,
+      );
     }
 
     runtime.events.assistant(text, {
