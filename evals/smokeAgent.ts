@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@mariozechner/pi-agent-core/dist/types";
 import { getEnvApiKey, type AssistantMessage, type Model } from "@mariozechner/pi-ai";
 import type { PiAiRuntime, PiAiToolset } from "@vitest-evals/harness-pi-ai";
 
@@ -61,19 +62,33 @@ function buildModel(): Model<"openai-completions"> {
 const EMPTY_TOOLSET = {} satisfies PiAiToolset<string>;
 type SmokeRuntime = PiAiRuntime<typeof EMPTY_TOOLSET, string>;
 
+export type SmokeAgentOptions = {
+  /**
+   * System prompt for the agent. Defaults to a minimal smoke prompt. Pass the
+   * text an agent should route on (e.g. an `<available_skills>` block) to test
+   * routing behaviour instead of the pipeline round-trip.
+   */
+  systemPrompt?: string;
+  /**
+   * Tools the model can call, set on `AgentState.tools`. Pass a `read` tool
+   * (see skills.ts) to let the model fetch a skill body on demand, as pi does.
+   */
+  tools?: AgentTool<any>[];
+};
+
 export class SmokeAgent {
   readonly toolset = EMPTY_TOOLSET;
   private readonly agent: Agent;
   private readonly model: Model<"openai-completions">;
 
-  constructor() {
+  constructor(options: SmokeAgentOptions = {}) {
     this.model = buildModel();
     this.agent = new Agent({
       initialState: {
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: options.systemPrompt ?? SYSTEM_PROMPT,
         model: this.model,
         thinkingLevel: "off",
-        tools: [],
+        tools: options.tools ?? [],
       },
       toolExecution: "sequential",
       // pi-ai aborts a stream when a provider resolves to no API key. A local,
@@ -127,8 +142,8 @@ export class SmokeAgent {
 }
 
 /** Creates a fresh smoke agent for one eval run. */
-export function createSmokeAgent() {
-  return new SmokeAgent();
+export function createSmokeAgent(options: SmokeAgentOptions = {}) {
+  return new SmokeAgent(options);
 }
 
 function getFinalAssistantMessage(
