@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
+description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. Every body carries a generated `## Blast radius` section — every file that transitively imports the change, plus fallow's own changed-code risk flags (fan-in against the repo's percentiles, import cycles, boundary violations), from the bundled script. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
 ---
 
 PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
@@ -17,14 +17,18 @@ The test for every sentence: **could the reviewer get this from the diff?** If y
 
 When that shape is easier to see than to read, draw it — a mermaid diagram is part of the description, not decoration. Everything else stays out.
 
-Two blocks are exempt from that test because they are not prose: the CRAP metrics table and the Asana link. Both are required on every PR. See "CRAP metrics" below.
+Three blocks are exempt from that test because they are not prose: the generated blast radius, the CRAP metrics table, and the Asana link. All three are required on every PR. See "Blast radius" and "CRAP metrics" below.
 
-## The default — one paragraph
+## The default — one paragraph plus the generated blocks
 
 Most PRs need exactly this:
 
 ```markdown
 <One paragraph: what the change does, and the why behind it. End with any non-obvious follow-up or context the reviewer needs.>
+
+## Blast radius
+
+<Generated — see below.>
 
 ## CRAP metrics
 
@@ -44,6 +48,69 @@ Models from PRs that closed cleanly:
 - **#1244**: "Move both access-user lookups off the legacy `db._query` API onto `db.query`, the source of truth for relations going forward. The v2 result types match the normalizer, so the role and profile type assertions are no longer needed."
 
 That's the bar. One declarative sentence about what, one about why or consequence, optional one about follow-ups. Stop there.
+
+## Blast radius — required in every PR
+
+Every PR body carries a `## Blast radius` section: **every file that transitively imports something the branch changed**, plus the risk flags fallow raises on the changed set. Not a summary, not the direct importers — the full downstream set. A reviewer approving a four-line change to a shared hook deserves to see, without going and looking, that it is reachable from forty other modules.
+
+Generate it; never write it by hand:
+
+```bash
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts"
+```
+
+It prints the finished markdown section — paste it in verbatim, directly above the CRAP metrics block. It defaults to `origin/dev` (what PRs here target) and walks the whole graph; `--base <ref>`, `--max-depth <n>` and `--json` are there when you need them.
+
+It is TypeScript with no dependencies and no build step, run through Node's built-in type stripping — so it needs **Node >= 22.18 or >= 23.6**. `--no-warnings` only suppresses the experimental-type-stripping notice; without it the notice goes to stderr and the markdown on stdout is still clean.
+
+### What it does
+
+Two parts, because fallow answers half of this natively and not the other half.
+
+**The risk flags come from fallow.** Fallow's own term for blast radius is **fan-in** — "Number of files that import this file. High fan-in means high blast radius." `fallow health --file-scores --targets` reports fan-in for every file *and* the repo's own `fan_in_p75` / `fan_in_p95` percentiles in a single call, so a changed file is judged against how this codebase is actually shaped rather than a number invented here. `fallow dead-code --changed-since <base>` separately flags import cycles and architecture-boundary violations involving the changed files. All of that is cheap — three fallow calls, flat, regardless of diff size — and lands as bullets under the summary line:
+
+```markdown
+- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
+- 6 changed file(s) sit between the repo's p75 and p95 for fan-in (3–10 direct importers).
+- **Import cycle** — `packages/common/src/services/index.ts` → `packages/common/src/services/posts/index.ts` → ...
+- **Boundary violation** — `services/api/src/routers/decision/proposals/get.test.ts:17` imports `apps/app/src/components/Profile/CreateDecisionProcessModal/schemas/cowop.ts` — `services/api` may not import from `apps/app`
+```
+
+Only the p95 outliers are named (the top 5, then a count); a wide diff puts dozens of files over p75 and listing them all buries the cycles underneath.
+
+**The transitive set is not something fallow reports**, so the script composes it out of `fallow dead-code --trace-file <path> --format json`, which gives the direct importers of one file. Starting from `git diff --name-only $(git merge-base origin/dev HEAD)...HEAD`, it walks importers breadth-first, memoizing every file it has seen so a cycle or a diamond costs one trace rather than an unbounded walk. Output is grouped by workspace and sorted, so re-running on the same diff gives a byte-identical section.
+
+Two things worth knowing if you extend the script: `fallow dead-code` **exits 1 whenever it finds any issue at all**, which in a real repo is always — parse its stdout and ignore the exit code. And boundary zones are opt-in: `common` declares one zone per workspace in the `boundaries` block of `.fallowrc.json`, each allowed to import exactly the workspaces its `package.json` depends on, so an undeclared or inverted cross-package import shows up as a violation. In a repo with no zones the check reports nothing rather than confirming nothing is wrong, and the section says so out loud instead of reporting a reassuring zero.
+
+Over 25 downstream files the list moves inside a `<details>` block. Every path is still in the body — collapsing keeps the summary line readable, it does not trim the set.
+
+```markdown
+## Blast radius
+
+6 changed file(s) reach **23 file(s)** downstream across `apps/api`, `apps/app`, `services/workflows`.
+
+- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
+
+**apps/api**
+
+- `apps/api/app/api/v1/workflows/route.ts`
+
+**apps/app**
+
+- `apps/app/src/components/decisions/ProposalView.tsx`
+- ...
+```
+
+A change nothing imports says so — `Nothing imports the N changed file(s) — the change is a leaf.` That is a real result, not a failure; leave it in.
+
+### What it costs
+
+The risk flags are flat-cost. The transitive walk is not: one `fallow` process per file in the radius, and fallow reloads its cache each call. A normal single-task PR (a handful of files, tens downstream) takes **5–10 seconds**. A wide diff is much worse: a 52-file release-train branch reaching 1163 files took **~4.5 minutes**, and `--workers` barely helps because the walk is IO-bound. Two consequences:
+
+- Run it **once**, at PR time, not repeatedly during the task.
+- On a branch that wide, the radius is most of the app and the exhaustive list stops discriminating. Say so in the paragraph above it and keep the generated section as-is — don't hand-trim it, and don't lower `--max-depth` to make the number look better.
+
+Deleted files are dropped from the seed set (nothing is left to trace, and anything still importing them fails typecheck long before review), as are non-JS/TS paths — a migration-only or docs-only PR reports no radius.
 
 ## When a PR needs more
 
@@ -156,6 +223,7 @@ The block does not replace the paragraph, and the paragraph does not describe th
 - **No marketing copy.** "Comprehensive refactor", "unlocks a powerful workflow" — drop it. Be flat.
 - **No "Skipped locally" section.** If you're handing off a gate to CI, that's a process decision and doesn't need to be debated in the PR body. The implement-task skill governs when gates are required at task-completion time.
 - **No screenshots unless they actually clarify the change.** A modal that's "wider now" doesn't need a before/after; a layout shift that's hard to describe might.
+- **No hand-written blast radius.** The section is generated. A prose guess at what a change touches is exactly the claim a reviewer cannot check.
 
 ## Title vs body
 
@@ -179,4 +247,6 @@ Drop it on the last line. Reviewers click through to read the original task; the
 - **Don't pad the CRAP table.** One row per changed function, filtered by the four rules above. A table longer than the paragraph defeats the point.
 - **Don't expand a Summary just to look thorough.** A one-line PR description for a one-line change is correct, not lazy.
 - **Don't leave an architectural change undescribed.** Short is the rule; silent is not. If the PR moves a boundary, changes who owns state, or reorders a migration, that belongs in the body even when the diff is small.
+- **Don't open a PR without a Blast radius section.** It is the one section every body has, whatever the size of the diff.
+- **Don't edit the generated radius** to make it shorter or tidier. If the number is alarming, that is information the reviewer wants; put the reassurance in your paragraph, not in the file list.
 - **Don't bury a Stacked-on PR** in the middle of the body. First line of the summary, or its own line above it.

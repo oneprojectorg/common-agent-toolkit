@@ -1,6 +1,6 @@
 ---
 name: implement-task
-description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), `/simplify` + `/review`, then open a draft PR whose description ends with the CRAP metrics block, and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
+description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), `/simplify` + `/review`, then generate the blast radius and open a draft PR whose description ends with the CRAP metrics block, and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
 ---
 
 Drives a single Asana task from picked → ready-for-review. This skill owns **all** mutation of the Asana task: the atomic claim, every section move, every comment we post, the feature branch, and the PR. `pickup-task` only selects which task to work on.
@@ -323,7 +323,17 @@ post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
 
 ### Done
 
-When gates are green and `/simplify` + `/review` are clean: open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
+When gates are green and `/simplify` + `/review` are clean, build the PR body **before** opening the PR.
+
+Generate the blast radius — every file that transitively imports something this branch changed:
+
+```bash
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts" > /tmp/blast-radius.md
+```
+
+Run it once, here, and paste its output into the body verbatim as the `## Blast radius` section, directly above the CRAP metrics block. It is required in every PR — see `pr-description` for the format, the cost on a wide diff, and why it is never hand-written. A leaf change reports that it is a leaf; that is a result, not a failure.
+
+Then open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
 
 ### CRAP metrics in the PR description
 
