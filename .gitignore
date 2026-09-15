@@ -10,3 +10,4 @@ skill-audit/results/
 .commitmsg
 .prbody.md
 .audit/
+__pycache__/
