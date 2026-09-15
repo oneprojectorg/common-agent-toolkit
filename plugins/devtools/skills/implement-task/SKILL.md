@@ -328,7 +328,7 @@ When gates are green and `/simplify` + `/review` are clean, build the PR body **
 Generate the blast radius — every file that transitively imports something this branch changed:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.py" > /tmp/blast-radius.md
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts" > /tmp/blast-radius.md
 ```
 
 Run it once, here, and paste its output into the body verbatim as the `## Blast radius` section, directly above the CRAP metrics block. It is required in every PR — see `pr-description` for the format, the cost on a wide diff, and why it is never hand-written. A leaf change reports that it is a leaf; that is a result, not a failure.

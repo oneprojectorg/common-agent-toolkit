@@ -56,10 +56,12 @@ Every PR body carries a `## Blast radius` section: **every file that transitivel
 Generate it; never write it by hand:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.py"
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts"
 ```
 
 It prints the finished markdown section — paste it in verbatim, directly above the CRAP metrics block. It defaults to `origin/dev` (what PRs here target) and walks the whole graph; `--base <ref>`, `--max-depth <n>` and `--json` are there when you need them.
+
+It is TypeScript with no dependencies and no build step, run through Node's built-in type stripping — so it needs **Node >= 22.18 or >= 23.6**. `--no-warnings` only suppresses the experimental-type-stripping notice; without it the notice goes to stderr and the markdown on stdout is still clean.
 
 ### What it does
 
@@ -71,13 +73,14 @@ Two parts, because fallow answers half of this natively and not the other half.
 - **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
 - 6 changed file(s) sit between the repo's p75 and p95 for fan-in (3–10 direct importers).
 - **Import cycle** — `packages/common/src/services/index.ts` → `packages/common/src/services/posts/index.ts` → ...
+- **Boundary violation** — `services/api/src/routers/decision/proposals/get.test.ts:17` imports `apps/app/src/components/Profile/CreateDecisionProcessModal/schemas/cowop.ts` — `services/api` may not import from `apps/app`
 ```
 
 Only the p95 outliers are named (the top 5, then a count); a wide diff puts dozens of files over p75 and listing them all buries the cycles underneath.
 
 **The transitive set is not something fallow reports**, so the script composes it out of `fallow dead-code --trace-file <path> --format json`, which gives the direct importers of one file. Starting from `git diff --name-only $(git merge-base origin/dev HEAD)...HEAD`, it walks importers breadth-first, memoizing every file it has seen so a cycle or a diamond costs one trace rather than an unbounded walk. Output is grouped by workspace and sorted, so re-running on the same diff gives a byte-identical section.
 
-Two things worth knowing if you extend the script: `fallow dead-code` **exits 1 whenever it finds any issue at all**, which in a real repo is always — parse its stdout and ignore the exit code. And boundary zones are opt-in; this repo has none configured, so the boundary check reports nothing rather than confirming nothing is wrong, and the section says so out loud. Configuring zones in `.fallowrc.json` would make that check live.
+Two things worth knowing if you extend the script: `fallow dead-code` **exits 1 whenever it finds any issue at all**, which in a real repo is always — parse its stdout and ignore the exit code. And boundary zones are opt-in: `common` declares one zone per workspace in the `boundaries` block of `.fallowrc.json`, each allowed to import exactly the workspaces its `package.json` depends on, so an undeclared or inverted cross-package import shows up as a violation. In a repo with no zones the check reports nothing rather than confirming nothing is wrong, and the section says so out loud instead of reporting a reassuring zero.
 
 Over 25 downstream files the list moves inside a `<details>` block. Every path is still in the body — collapsing keeps the summary line readable, it does not trim the set.
 
