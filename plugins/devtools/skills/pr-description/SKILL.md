@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. Every body carries a generated `## Blast radius` section — every file that transitively imports the change, from the bundled fallow-backed script. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
+description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. Every body carries a generated `## Blast radius` section — every file that transitively imports the change, plus fallow's own changed-code risk flags (fan-in against the repo's percentiles, import cycles, boundary violations), from the bundled script. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
 ---
 
 PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
@@ -51,7 +51,7 @@ That's the bar. One declarative sentence about what, one about why or consequenc
 
 ## Blast radius — required in every PR
 
-Every PR body carries a `## Blast radius` section: **every file that transitively imports something the branch changed**. Not a summary, not the direct importers — the full downstream set. A reviewer approving a four-line change to a shared hook deserves to see, without going and looking, that it is reachable from forty other modules.
+Every PR body carries a `## Blast radius` section: **every file that transitively imports something the branch changed**, plus the risk flags fallow raises on the changed set. Not a summary, not the direct importers — the full downstream set. A reviewer approving a four-line change to a shared hook deserves to see, without going and looking, that it is reachable from forty other modules.
 
 Generate it; never write it by hand:
 
@@ -63,7 +63,21 @@ It prints the finished markdown section — paste it in verbatim, directly above
 
 ### What it does
 
-Fallow has no impact command, so the script composes one out of `fallow dead-code --trace-file <path> --format json`, which reports the direct importers of one file. Starting from `git diff --name-only $(git merge-base origin/dev HEAD)...HEAD`, it walks importers breadth-first, memoizing every file it has seen so a cycle or a diamond costs one trace rather than an unbounded walk. Output is grouped by workspace and sorted, so re-running on the same diff gives a byte-identical section.
+Two parts, because fallow answers half of this natively and not the other half.
+
+**The risk flags come from fallow.** Fallow's own term for blast radius is **fan-in** — "Number of files that import this file. High fan-in means high blast radius." `fallow health --file-scores --targets` reports fan-in for every file *and* the repo's own `fan_in_p75` / `fan_in_p95` percentiles in a single call, so a changed file is judged against how this codebase is actually shaped rather than a number invented here. `fallow dead-code --changed-since <base>` separately flags import cycles and architecture-boundary violations involving the changed files. All of that is cheap — three fallow calls, flat, regardless of diff size — and lands as bullets under the summary line:
+
+```markdown
+- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
+- 6 changed file(s) sit between the repo's p75 and p95 for fan-in (3–10 direct importers).
+- **Import cycle** — `packages/common/src/services/index.ts` → `packages/common/src/services/posts/index.ts` → ...
+```
+
+Only the p95 outliers are named (the top 5, then a count); a wide diff puts dozens of files over p75 and listing them all buries the cycles underneath.
+
+**The transitive set is not something fallow reports**, so the script composes it out of `fallow dead-code --trace-file <path> --format json`, which gives the direct importers of one file. Starting from `git diff --name-only $(git merge-base origin/dev HEAD)...HEAD`, it walks importers breadth-first, memoizing every file it has seen so a cycle or a diamond costs one trace rather than an unbounded walk. Output is grouped by workspace and sorted, so re-running on the same diff gives a byte-identical section.
+
+Two things worth knowing if you extend the script: `fallow dead-code` **exits 1 whenever it finds any issue at all**, which in a real repo is always — parse its stdout and ignore the exit code. And boundary zones are opt-in; this repo has none configured, so the boundary check reports nothing rather than confirming nothing is wrong, and the section says so out loud. Configuring zones in `.fallowrc.json` would make that check live.
 
 Over 25 downstream files the list moves inside a `<details>` block. Every path is still in the body — collapsing keeps the summary line readable, it does not trim the set.
 
@@ -71,6 +85,8 @@ Over 25 downstream files the list moves inside a `<details>` block. Every path i
 ## Blast radius
 
 6 changed file(s) reach **23 file(s)** downstream across `apps/api`, `apps/app`, `services/workflows`.
+
+- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
 
 **apps/api**
 
@@ -86,7 +102,7 @@ A change nothing imports says so — `Nothing imports the N changed file(s) — 
 
 ### What it costs
 
-One `fallow` process per file in the radius, and fallow reloads its cache each call. A normal single-task PR (a handful of files, tens downstream) takes **5–10 seconds**. A wide diff is much worse: a 52-file release-train branch reaching 1163 files took **~4.5 minutes**, and `--workers` barely helps because the walk is IO-bound. Two consequences:
+The risk flags are flat-cost. The transitive walk is not: one `fallow` process per file in the radius, and fallow reloads its cache each call. A normal single-task PR (a handful of files, tens downstream) takes **5–10 seconds**. A wide diff is much worse: a 52-file release-train branch reaching 1163 files took **~4.5 minutes**, and `--workers` barely helps because the walk is IO-bound. Two consequences:
 
 - Run it **once**, at PR time, not repeatedly during the task.
 - On a branch that wide, the radius is most of the app and the exhaustive list stops discriminating. Say so in the paragraph above it and keep the generated section as-is — don't hand-trim it, and don't lower `--max-depth` to make the number look better.
