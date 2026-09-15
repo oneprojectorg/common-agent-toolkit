@@ -328,10 +328,10 @@ When gates are green and `/simplify` + `/review` are clean, build the PR body **
 Generate the blast radius — every file that transitively imports something this branch changed:
 
 ```bash
-node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts" > /tmp/blast-radius.md
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/blast-radius/scripts/blast-radius.ts" > /tmp/blast-radius.md
 ```
 
-Run it once, here, and paste its output into the body verbatim as the `## Blast radius` section, directly above the CRAP metrics block. It is required in every PR — see `pr-description` for the format, the cost on a wide diff, and why it is never hand-written. A leaf change reports that it is a leaf; that is a result, not a failure.
+Run it once, here, and paste its output into the body verbatim as the `## Blast radius` section, directly above the CRAP metrics block. It is required in every PR — see `pr-description` for where it goes in the body and `blast-radius` for the tool, its flags, and what it costs on a wide diff. A leaf change reports that it is a leaf; that is a result, not a failure.
 
 Then open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
 

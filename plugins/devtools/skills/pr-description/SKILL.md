@@ -56,61 +56,15 @@ Every PR body carries a `## Blast radius` section: **every file that transitivel
 Generate it; never write it by hand:
 
 ```bash
-node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/pr-description/scripts/blast-radius.ts"
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/blast-radius/scripts/blast-radius.ts"
 ```
 
-It prints the finished markdown section — paste it in verbatim, directly above the CRAP metrics block. It defaults to `origin/dev` (what PRs here target) and walks the whole graph; `--base <ref>`, `--max-depth <n>` and `--json` are there when you need them.
+Paste the output in verbatim, directly above the CRAP metrics block. The `blast-radius` skill owns the tool — its flags, what the fan-in and cycle flags mean, what it costs on a wide diff, and how it composes the graph walk out of fallow. Two things matter for the body:
 
-It is TypeScript with no dependencies and no build step, run through Node's built-in type stripping — so it needs **Node >= 22.18 or >= 23.6**. `--no-warnings` only suppresses the experimental-type-stripping notice; without it the notice goes to stderr and the markdown on stdout is still clean.
-
-### What it does
-
-Two parts, because fallow answers half of this natively and not the other half.
-
-**The risk flags come from fallow.** Fallow's own term for blast radius is **fan-in** — "Number of files that import this file. High fan-in means high blast radius." `fallow health --file-scores --targets` reports fan-in for every file *and* the repo's own `fan_in_p75` / `fan_in_p95` percentiles in a single call, so a changed file is judged against how this codebase is actually shaped rather than a number invented here. `fallow dead-code --changed-since <base>` separately flags import cycles and architecture-boundary violations involving the changed files. All of that is cheap — three fallow calls, flat, regardless of diff size — and lands as bullets under the summary line:
-
-```markdown
-- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
-- 6 changed file(s) sit between the repo's p75 and p95 for fan-in (3–10 direct importers).
-- **Import cycle** — `packages/common/src/services/index.ts` → `packages/common/src/services/posts/index.ts` → ...
-- **Boundary violation** — `services/api/src/routers/decision/proposals/get.test.ts:17` imports `apps/app/src/components/Profile/CreateDecisionProcessModal/schemas/cowop.ts` — `services/api` may not import from `apps/app`
-```
-
-Only the p95 outliers are named (the top 5, then a count); a wide diff puts dozens of files over p75 and listing them all buries the cycles underneath.
-
-**The transitive set is not something fallow reports**, so the script composes it out of `fallow dead-code --trace-file <path> --format json`, which gives the direct importers of one file. Starting from `git diff --name-only $(git merge-base origin/dev HEAD)...HEAD`, it walks importers breadth-first, memoizing every file it has seen so a cycle or a diamond costs one trace rather than an unbounded walk. Output is grouped by workspace and sorted, so re-running on the same diff gives a byte-identical section.
-
-Two things worth knowing if you extend the script: `fallow dead-code` **exits 1 whenever it finds any issue at all**, which in a real repo is always — parse its stdout and ignore the exit code. And boundary zones are opt-in: `common` declares one zone per workspace in the `boundaries` block of `.fallowrc.json`, each allowed to import exactly the workspaces its `package.json` depends on, so an undeclared or inverted cross-package import shows up as a violation. In a repo with no zones the check reports nothing rather than confirming nothing is wrong, and the section says so out loud instead of reporting a reassuring zero.
-
-Over 25 downstream files the list moves inside a `<details>` block. Every path is still in the body — collapsing keeps the summary line readable, it does not trim the set.
-
-```markdown
-## Blast radius
-
-6 changed file(s) reach **23 file(s)** downstream across `apps/api`, `apps/app`, `services/workflows`.
-
-- **High fan-in** — `packages/common/src/client.ts` is imported directly by 242 files (repo p95 is 10). Every change here amplifies.
-
-**apps/api**
-
-- `apps/api/app/api/v1/workflows/route.ts`
-
-**apps/app**
-
-- `apps/app/src/components/decisions/ProposalView.tsx`
-- ...
-```
+- **Run it once**, at PR time. A normal PR takes 5–10 seconds; a 52-file branch took ~4.5 minutes.
+- On a diff that wide the radius is most of the app and stops discriminating. Say so in the paragraph above it and keep the generated section as-is — don't hand-trim it, and don't lower `--max-depth` to make the number look smaller.
 
 A change nothing imports says so — `Nothing imports the N changed file(s) — the change is a leaf.` That is a real result, not a failure; leave it in.
-
-### What it costs
-
-The risk flags are flat-cost. The transitive walk is not: one `fallow` process per file in the radius, and fallow reloads its cache each call. A normal single-task PR (a handful of files, tens downstream) takes **5–10 seconds**. A wide diff is much worse: a 52-file release-train branch reaching 1163 files took **~4.5 minutes**, and `--workers` barely helps because the walk is IO-bound. Two consequences:
-
-- Run it **once**, at PR time, not repeatedly during the task.
-- On a branch that wide, the radius is most of the app and the exhaustive list stops discriminating. Say so in the paragraph above it and keep the generated section as-is — don't hand-trim it, and don't lower `--max-depth` to make the number look better.
-
-Deleted files are dropped from the seed set (nothing is left to trace, and anything still importing them fails typecheck long before review), as are non-JS/TS paths — a migration-only or docs-only PR reports no radius.
 
 ## When a PR needs more
 
