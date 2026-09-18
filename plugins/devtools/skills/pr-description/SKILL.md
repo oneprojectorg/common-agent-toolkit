@@ -32,14 +32,21 @@ Most PRs need exactly this:
 
 ## CRAP metrics
 
+Worst: 14 (`mergeProposalFields`). Nothing above 30.
+
+<details>
+<summary>Per-function scores</summary>
+
 | Function | File | Cognitive | Coverage | CRAP |
 |---|---|---|---|---|
 | `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
 
-Worst: 14 (`mergeProposalFields`). Nothing above 30.
+</details>
 
 Asana: https://app.asana.com/0/<project>/<task_gid>
 ```
+
+**Every generated metric block collapses.** The blast radius and the CRAP table are evidence, not reading material: a reviewer opens them when the summary line gives them a reason to. Each block therefore leads with one visible line — the impact score and the reach for the radius, the worst score for CRAP — and puts the rows, the file list, and the score breakdown inside `<details>`. The blast-radius script already emits its section this way; the CRAP block is the one you assemble by hand, so collapse it yourself. Never collapse the summary line itself, and never collapse the paragraph.
 
 Models from PRs that closed cleanly:
 
@@ -156,10 +163,15 @@ Estimate coverage only when the function lives in a workspace held out of instru
 
 ### The block
 
-Add one row per function the diff adds or changes, sorted by score, highest first. Then state the worst score and whether anything is above 30.
+Lead with the worst score and whether anything is above 30 — that line stays visible. Then one row per function the diff adds or changes, sorted by score, highest first, inside a `<details>`.
 
 ```markdown
 ## CRAP metrics
+
+Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now.
+
+<details>
+<summary>Per-function scores</summary>
 
 | Function | File | Cognitive | Coverage | CRAP |
 |---|---|---|---|---|
@@ -167,7 +179,7 @@ Add one row per function the diff adds or changes, sorted by score, highest firs
 | `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
 | `getProposalVotes` | `packages/common/src/services/decision/getProposalVotes.ts` | 7 | 100% | 7 |
 
-Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now.
+</details>
 ```
 
 A PR whose source all sits in a held-out workspace gets the same table off the estimate path, and says which hold-out in the closing line. #2090 changed nine `apps/app` files and one e2e spec:

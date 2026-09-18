@@ -42,16 +42,28 @@ Requires **Node >= 22.18 or >= 23.6** — it is dependency-free TypeScript run t
 
 ## Reading the output
 
-The section leads with the score, then the radius, then a collapsed breakdown of how the score was computed and a collapsed file list.
+Two visible lines — the score and the reach — and everything else collapsed: which direct importers carry the reach, how the score was computed, the longest chain, and the file list.
 
 ```markdown
 ## Blast radius
 
 **Review impact: 45/100 — ELEVATED.** Worth a reviewer who knows this area.
 
-6 changed file(s) reach **255 file(s)** at runtime across `apps/api`, `apps/app`,
-`packages/common`, and a further 421 through types alone.
+6 changed file(s) reach **112 product file(s)** at runtime across `apps/api`,
+`apps/app`, plus 143 test file(s), and a further 421 through types alone.
+
+<details>
+<summary>Reached through 2 direct importer(s)</summary>
+
+- `services/api/src/routers/decision/proposals/create.ts` — 134 file(s)
+- `services/api/src/test/helpers/TestDecisionsDataManager.ts` — 110 file(s)
+
+</details>
 ```
+
+**Product and test files are counted separately.** One shared fixture puts every suite that uses it in the radius — on a one-file change to `createProposal.ts`, 200 of the 244 downstream files were specs behind `TestDecisionsDataManager`. That is worth knowing and worth not burying the 44 product files under. Only the product set drives the score.
+
+**"Reached through" is the actionable line.** A three-figure radius almost always arrives through two or three direct importers — an aggregating router, a shared fixture. Naming them, with the count each carries, answers "through what" in a way the flat list cannot.
 
 ### The score
 
@@ -77,8 +89,9 @@ Every threshold is either a limit this repo configured, a percentile fallow meas
 
 - **Runtime versus type-only.** A file reachable through a chain of value imports can change behaviour when it runs. A file reachable only through `import type` — or through a plain `import { SomeType }` that the checker knows carries no value — is checked by `tsc` before anything executes. Both are listed, type-only ones marked `_(type-only)_`, but only the runtime set drives the score. A change whose whole radius is type-only says so, and that is a genuinely smaller review.
 - **A leaf is a result.** `Nothing imports the N changed file(s) — the change is a leaf.` is an answer, not a failure. Leave it in the PR body.
-- **The longest proven chain is shown** so the number is auditable. Every hop is an import the TypeScript checker resolved; you can open the files and check it.
-- **Over 25 downstream files the list collapses into `<details>`.** Every path is still there; collapsing keeps the summary line readable, it does not trim the set.
+- **The longest proven chain is shown** so the number is auditable. Every hop is an import the TypeScript checker resolved; you can open the files and check it. No hop is ever a barrel.
+- **A re-export is not a use.** `export * from './x'` and `export { y } from './x'` route a symbol onward; nothing in the barrel changes when the file behind it does. Those edges are walked *through* — a `import * as ns from './barrel'` still reaches what the barrel re-exports — but the barrel itself is not reported as a dependent. On the `createProposal.ts` change that dropped `packages/common/src/index.ts`, its two intermediate barrels, and 12 `apps/app/src/components/**/index.ts` re-export files, and moved `services/api/index.ts` from the runtime radius to the type-only one, where its single real edge (`import type { AppRouter }`) belongs.
+- **The file list is always collapsed**, however short. Every path is still there; collapsing keeps the PR body readable, it does not trim the set. Test files are marked `_(test)_`.
 
 Deleted files are dropped from the seed set — nothing is left to trace, and anything still importing them fails typecheck long before review — as are non-JS/TS paths. A migration-only or docs-only diff reports no radius.
 
@@ -104,7 +117,9 @@ Two parts: the graph, and the signals scored against it.
 
 The obvious source of import edges is `fallow dead-code --trace-file`, which reports the direct importers of one file. Its edges are *file*-level: `A` imports `B` if `A` names `B`'s module. Through a barrel that re-exports with `export *`, that makes every consumer of the barrel a dependent of every file behind it. Measured on `common`, a six-file moderation change traced to **1,015 files** that way — and of the 289 files importing the `@op/common` barrel, exactly **one** actually depended on a changed file. A number nobody can check is worse than no number.
 
-So the walk is built on symbol identity instead. `typescript/unstable/sync` exposes the real checker: for each import or export specifier it resolves the *symbol*, `getAliasedSymbol` follows it through however many `export *` hops it takes, and the symbol's declarations name the file that actually declares it. The barrel drops out, because it routes symbols rather than owning them. `SymbolFlags.Value` then separates runtime edges from erased ones. Every edge is one the compiler itself resolves.
+So the walk is built on symbol identity instead. `typescript/unstable/sync` exposes the real checker: for each import or export specifier it resolves the *symbol*, `getAliasedSymbol` follows it through however many `export *` hops it takes, and the symbol's declarations name the file that actually declares it. `SymbolFlags.Value` then separates runtime edges from erased ones. Every edge is one the compiler itself resolves.
+
+That fixes the consumer side — `import { getProposal } from '@op/common'` lands on `getProposal.ts`, not on the barrel — but it leaves the barrel's own `export * from './x'` looking like a dependency on `x`. It is not one: a barrel routes a symbol, it does not read it, and nothing in it changes when `x` does. Re-export edges are therefore kept in a third graph and walked *through* rather than counted, so a namespace or side-effect import of a barrel still reaches everything behind it while the barrel stays out of the radius. A file that both re-exports and genuinely imports arrives on its real edge and is reported then, which is how `services/api/index.ts` lands in the type-only radius rather than the runtime one.
 
 It is also both faster and *more complete* than the file walk it replaces: **2.1s versus 3m45s**, and a strict superset — fallow's per-file trace missed 46 real edges on that diff, including an inbound moderation webhook route. That is not a knock on fallow, whose job here is the health signals; it is what a file-level graph can and cannot say.
 
