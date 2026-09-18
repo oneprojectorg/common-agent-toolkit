@@ -73,12 +73,13 @@ const TRACEABLE_SUFFIXES = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 // not trip the repo hook that blocks git commands naming that branch.
 const BASE_CANDIDATES = ["origin/dev", "dev", "origin/" + "main", "main"];
 
-// Above this many downstream files the list moves into a <details> block. Every
-// path stays in the body; it just stops burying the summary line.
-const COLLAPSE_THRESHOLD = 25;
-
 // How many outliers to name individually before collapsing to a count.
 const NAMED_LIMIT = 5;
+
+// How many direct importers to name in the "reached through" block. A wide diff
+// has one per changed file; past ten the list stops being the short answer it
+// exists to be. The remainder is reported as a count, never dropped silently.
+const ENTRY_HOP_LIMIT = 10;
 
 // `fallow health --file-scores` on a large repo runs to several MB, well past
 // Node's 1MB default. Truncation would surface as a JSON parse error, i.e. as a
@@ -275,6 +276,20 @@ interface Graph {
   value: Map<string, Set<string>>;
   /** file -> files it depends on at all, type-only imports included. */
   all: Map<string, Set<string>>;
+  /**
+   * barrel -> files it re-exports from, i.e. `export ... from './x'`.
+   *
+   * Kept out of `value` and `all` because a re-export is not a use. A barrel
+   * routes a symbol; it does not read it, and nothing in it changes when the
+   * file behind it does. Counting the edge would put every barrel over a
+   * changed file into the radius, and — worse — make the barrel a hop that
+   * anything depending on the module as a whole inherits.
+   *
+   * The walk still traverses these edges, so a namespace or side-effect import
+   * of a barrel reaches what the barrel re-exports. It just does not report the
+   * barrel itself as a dependent.
+   */
+  route: Map<string, Set<string>>;
   /** Files the checker never saw, so nothing can be claimed about them. */
   unanalyzed: string[];
 }
@@ -341,6 +356,7 @@ function symbolGraph(
 
     const value = new Map<string, Set<string>>();
     const all = new Map<string, Set<string>>();
+    const route = new Map<string, Set<string>>();
 
     for (const project of projects) {
       const checker = project.checker;
@@ -353,11 +369,22 @@ function symbolGraph(
 
         const valueDeps = new Set<string>();
         const allDeps = new Set<string>();
+        const routeDeps = new Set<string>();
         value.set(rel, valueDeps);
         all.set(rel, allDeps);
+        route.set(rel, routeDeps);
 
-        /** Record the file that declares `symbol`, following export aliases. */
-        const addSymbol = (symbol: SymbolLike | undefined, typed: boolean) => {
+        /**
+         * Record the file that declares `symbol`, following export aliases.
+         *
+         * `routing` marks the statement as `export ... from`, which sends the
+         * edge to `routeDeps` instead: see `Graph.route`.
+         */
+        const addSymbol = (
+          symbol: SymbolLike | undefined,
+          typed: boolean,
+          routing = false,
+        ) => {
           if (!symbol) return;
           let target = symbol;
           // An import of a re-exported name resolves to the alias; the aliased
@@ -379,6 +406,10 @@ function symbolGraph(
             if (!node) continue;
             const path = relative(root, node.getSourceFile().fileName);
             if (path.startsWith("..") || path === rel) continue;
+            if (routing) {
+              routeDeps.add(path);
+              continue;
+            }
             allDeps.add(path);
             if (!erased) valueDeps.add(path);
           }
@@ -392,7 +423,11 @@ function symbolGraph(
          * the module exports. Deliberately over-approximate: these forms give
          * the compiler no narrower answer either.
          */
-        const addModule = (specifier: NodeLike | undefined, typed: boolean) => {
+        const addModule = (
+          specifier: NodeLike | undefined,
+          typed: boolean,
+          routing = false,
+        ) => {
           if (!specifier) return;
           const symbol = checker.getSymbolAtLocation(specifier);
           if (!symbol) return;
@@ -401,6 +436,10 @@ function symbolGraph(
             if (!node) continue;
             const path = relative(root, node.getSourceFile().fileName);
             if (path.startsWith("..") || path === rel) continue;
+            if (routing) {
+              routeDeps.add(path);
+              continue;
+            }
             allDeps.add(path);
             if (!typed) valueDeps.add(path);
           }
@@ -442,22 +481,25 @@ function symbolGraph(
           if (!statement.moduleSpecifier) continue;
           const typed = Boolean(statement.isTypeOnly);
           const clause = statement.exportClause;
+          // Every `export ... from` edge is routing rather than use, whether it
+          // names symbols or stars the module: see `Graph.route`.
           if (clause?.elements) {
             for (const element of clause.elements) {
               addSymbol(
                 checker.getSymbolAtLocation(element.name),
                 typed || Boolean(element.isTypeOnly),
+                true,
               );
             }
           } else {
             // `export *` / `export * as ns` — everything the module exports.
-            addModule(statement.moduleSpecifier, typed);
+            addModule(statement.moduleSpecifier, typed, true);
           }
         }
       }
     }
 
-    return { value, all, unanalyzed: [] };
+    return { value, all, route, unanalyzed: [] };
   } finally {
     api.close();
   }
@@ -482,11 +524,19 @@ function invert(forward: Map<string, Set<string>>): Map<string, Set<string>> {
  * Frontier order, not completion order, so a given diff always produces the
  * same list. `seen` holds everything already queued, so a cycle or a diamond
  * costs one visit rather than an unbounded walk.
+ *
+ * `routers` is the inverted re-export graph: barrel files that route a symbol
+ * onward without using it. They are walked *through* — so a namespace or
+ * side-effect import of a barrel still reaches what the barrel re-exports —
+ * but a file reached only that way is not itself a dependent and stays out of
+ * `files`. A barrel that also imports a changed file for its own use arrives
+ * on a real edge as well, and is reported then.
  */
 function closure(
   reverse: Map<string, Set<string>>,
   seeds: string[],
   maxDepth: number,
+  routers: Map<string, Set<string>> = new Map(),
 ): { files: string[]; depth: number; parent: Map<string, string> } {
   const seen = new Set(seeds);
   const parent = new Map<string, string>();
@@ -494,15 +544,40 @@ function closure(
   let frontier = seeds;
   let depth = 0;
 
+  /**
+   * `file` plus every barrel that routes it onward, however many hops deep.
+   *
+   * Expanded within the round rather than as a level of its own, so `depth`
+   * keeps counting hops of real use. A barrel is a name for a file, not a step
+   * away from it.
+   */
+  const throughBarrels = (file: string): string[] => {
+    if (routers.size === 0) return [file];
+    const reached = [file];
+    const visited = new Set([file]);
+    for (let i = 0; i < reached.length; i += 1) {
+      for (const barrel of routers.get(reached[i]) ?? []) {
+        if (visited.has(barrel)) continue;
+        visited.add(barrel);
+        reached.push(barrel);
+      }
+    }
+    return reached;
+  };
+
   while (frontier.length > 0 && depth < maxDepth) {
     const next: string[] = [];
     for (const file of frontier) {
-      for (const importer of [...(reverse.get(file) ?? [])].sort()) {
-        if (seen.has(importer)) continue;
-        seen.add(importer);
-        parent.set(importer, file);
-        files.push(importer);
-        next.push(importer);
+      // The barrel is never the `parent` recorded: a chain that named one would
+      // be a hop the reviewer cannot act on. The file behind it is the cause.
+      for (const alias of throughBarrels(file)) {
+        for (const importer of [...(reverse.get(alias) ?? [])].sort()) {
+          if (seen.has(importer)) continue;
+          seen.add(importer);
+          parent.set(importer, file);
+          files.push(importer);
+          next.push(importer);
+        }
       }
     }
     if (next.length === 0) break;
@@ -1067,19 +1142,67 @@ function render(
       "",
     );
   } else {
-    // The workspaces named are those of the runtime radius, so they account for
+    // Product first, tests counted separately. A shared test helper puts every
+    // suite that uses it in the radius, and 200 specs behind one fixture is a
+    // different fact from 44 product files — merging them into one number is
+    // what makes a radius read as "everything".
+    const productReach = valueRadius.filter((p) => !TEST_PATTERN.test(p));
+    const testReach = valueRadius.length - productReach.length;
+    // The workspaces named are those of the product radius, so they account for
     // the number quoted alongside them rather than for the larger listing below.
-    const names = [...new Set(valueRadius.map(workspaceOf))].sort();
+    const names = [...new Set(productReach.map(workspaceOf))].sort();
     lines.push(
       `${changed.length} changed file(s) reach ` +
-        `**${valueRadius.length}${truncated ? "+" : ""} file(s)** at runtime ` +
-        `across ${names.map((n) => `\`${n}\``).join(", ")}` +
+        `**${productReach.length}${truncated ? "+" : ""} product file(s)** at ` +
+        `runtime` +
+        (names.length > 0
+          ? ` across ${names.map((n) => `\`${n}\``).join(", ")}`
+          : "") +
+        (testReach > 0 ? `, plus ${testReach} test file(s)` : "") +
         (typeOnlyRadius.length > 0
           ? `, and a further ${typeOnlyRadius.length} through types alone`
           : "") +
         ".",
       "",
     );
+  }
+
+  // Which direct importers carry the reach. A reviewer's second question, after
+  // "how many", is "through what" — and the answer is usually two or three
+  // files, which is far more actionable than the flat list below.
+  const seeds = new Set(changed);
+  const entryHops = new Map<string, number>();
+  for (const file of valueRadius) {
+    let at = file;
+    const guard = new Set([at]);
+    while (parent.has(at) && !seeds.has(parent.get(at)!)) {
+      at = parent.get(at)!;
+      if (guard.has(at)) break;
+      guard.add(at);
+    }
+    entryHops.set(at, (entryHops.get(at) ?? 0) + 1);
+  }
+  if (entryHops.size > 0 && valueRadius.length > entryHops.size) {
+    const ranked = [...entryHops.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    );
+    lines.push(
+      "<details>",
+      `<summary>Reached through ${ranked.length} direct importer(s)</summary>`,
+      "",
+    );
+    for (const [file, count] of ranked.slice(0, ENTRY_HOP_LIMIT)) {
+      lines.push(`- \`${file}\` — ${count} file(s)`);
+    }
+    if (ranked.length > ENTRY_HOP_LIMIT) {
+      const rest = ranked.slice(ENTRY_HOP_LIMIT);
+      const carried = rest.reduce((sum, [, count]) => sum + count, 0);
+      lines.push(
+        `- _and ${rest.length} more direct importer(s), carrying ` +
+          `${carried} file(s) between them_`,
+      );
+    }
+    lines.push("", "</details>", "");
   }
 
   if (truncated) {
@@ -1147,23 +1270,29 @@ function render(
   const names = [...byWorkspace.keys()].sort();
   const typeOnly = new Set(typeOnlyRadius);
 
-  const collapse = radius.length > COLLAPSE_THRESHOLD;
-  if (collapse) {
-    lines.push(
-      "<details>",
-      `<summary>${truncated ? "First" : "All"} ${radius.length} ` +
-        "downstream files</summary>",
-      "",
-    );
-  }
+  // Always collapsed. The file list is evidence for the summary line above it,
+  // not something a reviewer reads top-to-bottom, and an open list of a few
+  // hundred paths buries every other section of the PR body.
+  lines.push(
+    "<details>",
+    `<summary>${truncated ? "First" : "All"} ${radius.length} ` +
+      "downstream files</summary>",
+    "",
+  );
   for (const name of names) {
     lines.push(`**${name}**`, "");
     for (const path of byWorkspace.get(name)!) {
-      lines.push(`- \`${path}\`${typeOnly.has(path) ? " _(type-only)_" : ""}`);
+      const tags = [
+        typeOnly.has(path) ? "type-only" : "",
+        TEST_PATTERN.test(path) ? "test" : "",
+      ].filter(Boolean);
+      lines.push(
+        `- \`${path}\`${tags.length > 0 ? ` _(${tags.join(", ")})_` : ""}`,
+      );
     }
     lines.push("");
   }
-  if (collapse) lines.push("</details>");
+  lines.push("</details>");
 
   return lines.join("\n").replace(/\s+$/, "") + "\n";
 }
@@ -1284,8 +1413,9 @@ async function main(): Promise<void> {
   const graph = engineChoice === "fallow" ? null : symbolGraph(root, progress);
   if (graph) {
     engine = "typescript";
-    const valueWalk = closure(invert(graph.value), changed, maxDepth);
-    const allWalk = closure(invert(graph.all), changed, maxDepth);
+    const routers = invert(graph.route);
+    const valueWalk = closure(invert(graph.value), changed, maxDepth, routers);
+    const allWalk = closure(invert(graph.all), changed, maxDepth, routers);
     const valueSet = new Set(valueWalk.files);
     valueRadius = valueWalk.files;
     typeOnlyRadius = allWalk.files.filter((f) => !valueSet.has(f));
