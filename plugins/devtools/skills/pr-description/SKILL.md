@@ -32,7 +32,7 @@ Most PRs need exactly this:
 
 ## CRAP metrics
 
-| Function | File | Complexity | Coverage | CRAP |
+| Function | File | Cognitive | Coverage | CRAP |
 |---|---|---|---|---|
 | `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
 
@@ -129,19 +129,30 @@ When the follow-up is non-trivial, file an Asana task and link it — the PR sec
 
 ## CRAP metrics
 
-Every PR body ends with a CRAP metrics block, directly above the Asana link. CRAP is the Change Risk Anti-Patterns score. It combines how branchy a function is with how much of it the tests reach, so the reviewer sees where the risk sits before reading the diff. Print the block on every PR, including a one-line change.
+Every PR body ends with a CRAP metrics block, directly above the Asana link. CRAP is the Change Risk Anti-Patterns score. It combines what a function costs to understand with how much of it the tests reach, so the reviewer sees where the risk sits before reading the diff. Print the block on every PR, including a one-line change.
 
 ### The score
 
 ```
-CRAP = complexity² × (1 − coverage)³ + complexity
+CRAP = cognitive² × (1 − coverage)³ + cognitive
 ```
 
 `coverage` is a fraction from 0 to 1. Round the score to a whole number.
 
-Count `complexity` as McCabe cyclomatic complexity. Start at 1 and add 1 for each of: an `if`, an `else if`, a `case` (not `default`), a loop, a `catch`, a ternary, and each `&&`, `||`, or `??`. Count the same way on every PR — the numbers are only useful when they compare.
+**Complexity here is cognitive, not McCabe cyclomatic.** `configs/fallow/README.md` in `common` owns the formula and the metric — cite it rather than restating it, so the two cannot drift apart again. Cognitive charges for nesting where cyclomatic counts branches, and the two diverge far past the margin on real code: on #2090 `ReviewSummaryView` scored cyclomatic 24 against cognitive 34 — CRAP 600 against 1190. Fallow's own `crap` column is a third number again, because it hardcodes cyclomatic and reads coverage off static reachability. `pnpm health` prints that column with a note saying it is not the one that gates. Don't copy it into the table.
 
-Read `coverage` from a coverage reporter when the workspace has one. The `common` monorepo has none today, so derive it instead: divide the branches a test exercises by the function's total branches, and use 0 when no test reaches the function. Mark the block as an estimate when you derive it this way.
+Read the numbers off the tool instead of counting by hand:
+
+```bash
+pnpm test:coverage   # needs Docker + `pnpm w:api test:supabase:start`; ~4 minutes
+pnpm health
+```
+
+`pnpm health` names the worst function in every changed file at CRAP 30 or worse, with its cognitive score and its measured coverage — the rows that owe a justification line anyway. For the functions under that line, `scripts/lib/fallow-crap.mjs` shows the inventory pass it reads them from: `fallow health --quiet --complexity --max-cyclomatic 0 --max-cognitive 0 --format json` returns every function with its `path`, `name`, `line`, and `cognitive`.
+
+`coverage` is measured, not guessed. `pnpm test:coverage` merges the instrumented runs into `coverage/coverage-final.json`, and the score reads each function's statement coverage over its line span. A report older than your last edit is not a source — `pnpm health` reports `CRAP: STALE` rather than a green it cannot back up.
+
+Estimate coverage only when the function lives in a workspace held out of instrumentation. `UNMEASURABLE` in `scripts/lib/fallow-crap.mjs` is that list — `apps/app` and `packages/sense` today, because the Playwright suite runs against an uninstrumented Next build and `sense` is exercised by Storybook only. Read the constant; don't infer it from the path. Where it applies, divide the branches a test exercises by the function's total branches, use 0 when no test reaches the function, and name the held-out workspace in the block. The repo has a coverage reporter — never write that it doesn't.
 
 ### The block
 
@@ -150,18 +161,24 @@ Add one row per function the diff adds or changes, sorted by score, highest firs
 ```markdown
 ## CRAP metrics
 
-| Function | File | Complexity | Coverage | CRAP |
+| Function | File | Cognitive | Coverage | CRAP |
 |---|---|---|---|---|
 | `resolveVoteWeight` | `packages/common/src/services/decision/resolveVoteWeight.ts` | 12 | 0% | 156 |
 | `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
 | `getProposalVotes` | `packages/common/src/services/decision/getProposalVotes.ts` | 7 | 100% | 7 |
 
-Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now. Coverage is estimated from the tests; the repo has no coverage reporter.
+Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now.
+```
+
+A PR whose source all sits in a held-out workspace gets the same table off the estimate path, and says which hold-out in the closing line. #2090 changed nine `apps/app` files and one e2e spec:
+
+```markdown
+Worst: 1190 (`ReviewSummaryView`) — cognitive 34 across the summary's branch arms. Coverage is estimated: `apps/app` is in `UNMEASURABLE`, so the e2e suite that exercises these components reports nothing.
 ```
 
 Four rules keep the block short:
 
-1. Skip a function with a complexity of 1. It carries no signal. Add a trailing line — "6 straight-line functions omitted" — so the reviewer knows the table is filtered.
+1. Skip a function scoring cognitive 0 or 1 — a straight-line body is 0 under cognitive, not 1. It carries no signal. Add a trailing line — "6 straight-line functions omitted" — so the reviewer knows the table is filtered.
 2. Keep the 10 highest rows when the table runs longer. Add "+ 14 more, all under 6".
 3. Write one line of justification for any score above 30, as in the example. A high score with no explanation reads as an oversight.
 4. Write "No executable functions changed." when the diff only touches docs, config, schema SQL, or fixtures. That line is the whole block.
