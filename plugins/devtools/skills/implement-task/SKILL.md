@@ -344,7 +344,7 @@ Compute the CRAP metrics **before** you call `gh pr create`, and end the body wi
    git diff origin/dev...HEAD
    ```
    Work from the diff, not from your memory of the task. A function you touched in a `/review` pass counts.
-2. Score each one. Complexity comes from reading the function. Coverage comes from the coverage reporter when the workspace has one, and from reading the tests when it doesn't — label the block as an estimate in that case.
+2. Score each one. Cognitive complexity and measured coverage both come from the tool — `pnpm test:coverage` then `pnpm health`. Estimate coverage only for a function in a workspace `UNMEASURABLE` holds out of instrumentation (`scripts/lib/fallow-crap.mjs`), and label the block as an estimate in that case. `pr-description` has the commands and the reasoning.
 3. Paste the block into the body, above the Asana link.
 
 The metrics report the diff you are about to open, so a late fix invalidates them. If a `/review` iteration or a gate failure changes any function after you compute the block, recompute it. Do not reuse a block from an earlier iteration, and do not report a score you did not derive from the current diff.
