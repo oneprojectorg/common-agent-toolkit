@@ -1,6 +1,6 @@
 ---
 name: technical-writing
-description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule — comments decay — so write one only when the reasoning is not obvious from the code, then keep it to one short line.
+description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. An ADR records the target architecture and the reason for it, never the migration route, never a premise that deserves its own backfilled ADR, and never a question the team has not actually decided. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule — comments decay — so write one only when the reasoning is not obvious from the code, then keep it to one short line.
 ---
 
 Simplified Technical English (STE) keeps a document unambiguous. It helps a reader who skims, who translates the text, or who reads English as a second language. Apply these rules to any prose a person reads, and to your own answer when the user asks for documentation.
@@ -74,6 +74,17 @@ PR #1864 introduced ADR scaffolding under `docs/adr/` and drew five line-level r
 - **Context that belongs to the change, not the artefact, goes in the PR body.** The relationship between the new ADRs and the existing constitution was interesting and it was not part of ADR 0001.
 
 Before you deliver a structured document, read each section and ask what a reader loses if you delete it. Delete the ones with no answer.
+
+### An ADR records the architecture, not the route to it
+
+The second ADR review pass (#2074, #2075) drew the same correction from a different angle: the documents were accurate and still mostly needed deleting, because they described *the migration* rather than *the decision*. Four rules came out of it, and they apply to any architecture document here.
+
+- **Cut the in-flight work.** How the codebase gets from the current shape to the decided one is a process detail with a shelf life of weeks; the ADR outlives it. #2074: *"I think we should remove anything related to HOW we migrate towards this architecture and keep it scoped to how the architecture is meant to be."*
+- **One decision per ADR — split the premise out and backfill it.** ADR 0005 opened by establishing that an entity in this codebase is a profile, then decided that phases are entities. The reviewer wanted two documents: *"This should just be a separate ADR that we should backfill describing that 'in this codebase an entity is a profile'."* A premise worth stating is worth its own number.
+- **Don't record what the team hasn't decided.** A paragraph on slug behaviour went in because it was adjacent, and came out because no decision stood behind it: *"Let's just remove this about slugs.. I'm not sure we've decided anything on that."* Undecided material in a decision record reads as settled to the next person who greps it.
+- **The why is the content.** The same review that cut three sections asked for one to be *added*: *"I wonder if we can articulate why we would need them and where … Let's add a big ol' 'why' to this ADR?"* Most of the length an ADR should carry is the reason, not the rule.
+
+The compression target is real. One eight-paragraph Context section was answered with two sentences the reviewer wrote out in the comment: phases are baked into `instance_data` today, and we want them as separate entities so they gain what profile entities have. If your Context can be said that briefly, say it that briefly.
 
 ## Checklist
 
