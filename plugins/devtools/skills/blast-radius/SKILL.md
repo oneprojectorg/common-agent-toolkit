@@ -1,6 +1,6 @@
 ---
 name: blast-radius
-description: Report what a change reaches and how much review it warrants — every file that transitively depends on something the branch changed, proved symbol by symbol against the TypeScript checker, plus a 0-100 review-impact score built from fallow's health signals (complexity over the repo's own limits, fan-in/fan-out percentiles, churn hotspots, test reachability). Prints the `## Blast radius` markdown section that pr-description requires, or JSON. Use when asked what a change touches or affects, how risky or far-reaching a diff is, whether a change needs human review, what depends on a file, before refactoring a shared module, when reviewing someone else's branch, or when invoking /blast-radius.
+description: Report what a change reaches and how much review it warrants — every file that transitively depends on something the branch changed, proved symbol by symbol against the TypeScript checker, plus a 0-100 review-impact score built from fallow's health signals (complexity over the repo's own limits, fan-in/fan-out percentiles, churn hotspots, test reachability). Prints the `## Blast radius` markdown section CI posts on every PR, or JSON. Use when asked what a change touches or affects, how risky or far-reaching a diff is, whether a change needs human review, what depends on a file, before refactoring a shared module, when reviewing someone else's branch, or when invoking /blast-radius.
 ---
 
 # Blast radius
@@ -9,7 +9,7 @@ Answers two questions: **what does this change reach**, and **how much review do
 
 The script walks the dependency graph upwards from every file the branch changed and reports each file that transitively depends on one of them — not the direct importers, the full downstream set. A four-line edit to a shared module that forty files reach is a different review than the same four lines in a leaf, and nothing in the diff says which one you are looking at.
 
-`pr-description` requires this section in every PR body. This skill is the tool itself, so you can also run it on its own — before a refactor, while reviewing someone else's branch, or any time "what depends on this?" is the question.
+CI runs this on every PR and posts the section itself, so it never goes into the PR body by hand. This skill is the same tool, run locally — before a refactor, while reviewing someone else's branch, or any time "what depends on this?" is the question.
 
 ## Run it
 

@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. Every body carries a generated `## Blast radius` section — every file that transitively imports the change, plus fallow's own changed-code risk flags (fan-in against the repo's percentiles, import cycles, boundary violations), from the bundled script. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary. Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, a required CRAP metrics table at the end, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
+description: How to write a PR description in this repo — short, concise, and to the point. Describe only what the reviewer cannot get from the diff, and spend the words on architectural considerations (new boundaries, data flow, schema shape, coupling, migration order), with a mermaid diagram when structure is the point. One paragraph is the default; no test-plan checklist, no walk-through of the diff, no AI-generated summary, no hand-pasted blast radius or CRAP metrics (CI posts both on every PR). Mermaid ERDs for schema PRs, sequence/flowchart diagrams for cross-service or multi-step flows, stacked-PR references, Asana task link. Use when opening a PR (via implement-task or by hand), drafting a PR body, or deciding what to include / omit.
 ---
 
 PR descriptions in this repo are **short, concise, and to the point**. The diff speaks for itself; the description tells the reviewer what changed and why in as few words as that takes. Most merged PRs are one paragraph. A handful are longer, and they earn the extra words by explaining a non-obvious constraint, root cause, or stack relationship.
@@ -17,36 +17,17 @@ The test for every sentence: **could the reviewer get this from the diff?** If y
 
 When that shape is easier to see than to read, draw it — a mermaid diagram is part of the description, not decoration. Everything else stays out.
 
-Three blocks are exempt from that test because they are not prose: the generated blast radius, the CRAP metrics table, and the Asana link. All three are required on every PR. See "Blast radius" and "CRAP metrics" below.
+One line is exempt from that test because it is not prose: the Asana link. It is required on every PR. The blast radius and the CRAP metrics are not part of the body any more — CI computes and posts both on every PR, so leave them out.
 
-## The default — one paragraph plus the generated blocks
+## The default — one paragraph plus the Asana link
 
 Most PRs need exactly this:
 
 ```markdown
 <One paragraph: what the change does, and the why behind it. End with any non-obvious follow-up or context the reviewer needs.>
 
-## Blast radius
-
-<Generated — see below.>
-
-## CRAP metrics
-
-Worst: 14 (`mergeProposalFields`). Nothing above 30.
-
-<details>
-<summary>Per-function scores</summary>
-
-| Function | File | Cognitive | Coverage | CRAP |
-|---|---|---|---|---|
-| `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
-
-</details>
-
 Asana: https://app.asana.com/0/<project>/<task_gid>
 ```
-
-**Every generated metric block collapses.** The blast radius and the CRAP table are evidence, not reading material: a reviewer opens them when the summary line gives them a reason to. Each block therefore leads with one visible line — the impact score and the reach for the radius, the worst score for CRAP — and puts the rows, the file list, and the score breakdown inside `<details>`. The blast-radius script already emits its section this way; the CRAP block is the one you assemble by hand, so collapse it yourself. Never collapse the summary line itself, and never collapse the paragraph.
 
 Models from PRs that closed cleanly:
 
@@ -55,23 +36,6 @@ Models from PRs that closed cleanly:
 - **#1244**: "Move both access-user lookups off the legacy `db._query` API onto `db.query`, the source of truth for relations going forward. The v2 result types match the normalizer, so the role and profile type assertions are no longer needed."
 
 That's the bar. One declarative sentence about what, one about why or consequence, optional one about follow-ups. Stop there.
-
-## Blast radius — required in every PR
-
-Every PR body carries a `## Blast radius` section: **every file that transitively imports something the branch changed**, plus the risk flags fallow raises on the changed set. Not a summary, not the direct importers — the full downstream set. A reviewer approving a four-line change to a shared hook deserves to see, without going and looking, that it is reachable from forty other modules.
-
-Generate it; never write it by hand:
-
-```bash
-node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/blast-radius/scripts/blast-radius.ts"
-```
-
-Paste the output in verbatim, directly above the CRAP metrics block. The `blast-radius` skill owns the tool — its flags, what the fan-in and cycle flags mean, what it costs on a wide diff, and how it composes the graph walk out of fallow. Two things matter for the body:
-
-- **Run it once**, at PR time. A normal PR takes 5–10 seconds; a 52-file branch took ~4.5 minutes.
-- On a diff that wide the radius is most of the app and stops discriminating. Say so in the paragraph above it and keep the generated section as-is — don't hand-trim it, and don't lower `--max-depth` to make the number look smaller.
-
-A change nothing imports says so — `Nothing imports the N changed file(s) — the change is a leaf.` That is a real result, not a failure; leave it in.
 
 ## When a PR needs more
 
@@ -134,79 +98,16 @@ Two rules:
 
 When the follow-up is non-trivial, file an Asana task and link it — the PR section is for "where do we pick up from here," the task tracker is for actually following up.
 
-## CRAP metrics
-
-Every PR body ends with a CRAP metrics block, directly above the Asana link. CRAP is the Change Risk Anti-Patterns score. It combines what a function costs to understand with how much of it the tests reach, so the reviewer sees where the risk sits before reading the diff. Print the block on every PR, including a one-line change.
-
-### The score
-
-```
-CRAP = cognitive² × (1 − coverage)³ + cognitive
-```
-
-`coverage` is a fraction from 0 to 1. Round the score to a whole number.
-
-**Complexity here is cognitive, not McCabe cyclomatic.** `configs/fallow/README.md` in `common` owns the formula and the metric — cite it rather than restating it, so the two cannot drift apart again. Cognitive charges for nesting where cyclomatic counts branches, and the two diverge far past the margin on real code: on #2090 `ReviewSummaryView` scored cyclomatic 24 against cognitive 34 — CRAP 600 against 1190. Fallow's own `crap` column is a third number again, because it hardcodes cyclomatic and reads coverage off static reachability. `pnpm health` prints that column with a note saying it is not the one that gates. Don't copy it into the table.
-
-Read the numbers off the tool instead of counting by hand:
-
-```bash
-pnpm test:coverage   # needs Docker + `pnpm w:api test:supabase:start`; ~4 minutes
-pnpm health
-```
-
-`pnpm health` names the worst function in every changed file at CRAP 30 or worse, with its cognitive score and its measured coverage — the rows that owe a justification line anyway. For the functions under that line, `scripts/lib/fallow-crap.mjs` shows the inventory pass it reads them from: `fallow health --quiet --complexity --max-cyclomatic 0 --max-cognitive 0 --format json` returns every function with its `path`, `name`, `line`, and `cognitive`.
-
-`coverage` is measured, not guessed. `pnpm test:coverage` merges the instrumented runs into `coverage/coverage-final.json`, and the score reads each function's statement coverage over its line span. A report older than your last edit is not a source — `pnpm health` reports `CRAP: STALE` rather than a green it cannot back up.
-
-Estimate coverage only when the function lives in a workspace held out of instrumentation. `UNMEASURABLE` in `scripts/lib/fallow-crap.mjs` is that list — `apps/app` and `packages/sense` today, because the Playwright suite runs against an uninstrumented Next build and `sense` is exercised by Storybook only. Read the constant; don't infer it from the path. Where it applies, divide the branches a test exercises by the function's total branches, use 0 when no test reaches the function, and name the held-out workspace in the block. The repo has a coverage reporter — never write that it doesn't.
-
-### The block
-
-Lead with the worst score and whether anything is above 30 — that line stays visible. Then one row per function the diff adds or changes, sorted by score, highest first, inside a `<details>`.
-
-```markdown
-## CRAP metrics
-
-Worst: 156 (`resolveVoteWeight`) — the retry branches need a live queue, so they stay untested for now.
-
-<details>
-<summary>Per-function scores</summary>
-
-| Function | File | Cognitive | Coverage | CRAP |
-|---|---|---|---|---|
-| `resolveVoteWeight` | `packages/common/src/services/decision/resolveVoteWeight.ts` | 12 | 0% | 156 |
-| `mergeProposalFields` | `packages/common/src/services/decision/mergeProposalFields.ts` | 9 | 60% | 14 |
-| `getProposalVotes` | `packages/common/src/services/decision/getProposalVotes.ts` | 7 | 100% | 7 |
-
-</details>
-```
-
-A PR whose source all sits in a held-out workspace gets the same table off the estimate path, and says which hold-out in the closing line. #2090 changed nine `apps/app` files and one e2e spec:
-
-```markdown
-Worst: 1190 (`ReviewSummaryView`) — cognitive 34 across the summary's branch arms. Coverage is estimated: `apps/app` is in `UNMEASURABLE`, so the e2e suite that exercises these components reports nothing.
-```
-
-Four rules keep the block short:
-
-1. Skip a function scoring cognitive 0 or 1 — a straight-line body is 0 under cognitive, not 1. It carries no signal. Add a trailing line — "6 straight-line functions omitted" — so the reviewer knows the table is filtered.
-2. Keep the 10 highest rows when the table runs longer. Add "+ 14 more, all under 6".
-3. Write one line of justification for any score above 30, as in the example. A high score with no explanation reads as an oversight.
-4. Write "No executable functions changed." when the diff only touches docs, config, schema SQL, or fixtures. That line is the whole block.
-
-The block does not replace the paragraph, and the paragraph does not describe the block. A score above 30 is not a blocker — it is a flag the reviewer decides on.
-
 ## What NOT to include
 
-- **No test-plan checklist.** Reviewers know what gates run and CI re-runs them. A `- [ ] pnpm typecheck` checklist is noise. The CRAP block is not a test plan — it reports risk, not which gates you ran, and it stays.
+- **No test-plan checklist.** Reviewers know what gates run and CI re-runs them. A `- [ ] pnpm typecheck` checklist is noise.
 - **No diff walk-through.** Reviewers read the diff. A bullet list that just enumerates "added X to file Y, added Z to file W" gets skimmed.
 - **No implementation narration.** Which hook you used, which helper you renamed, how many files moved — that's the diff's job. Describe the architecture the change lands in, not the steps that got it there.
 - **No decorative diagram.** A mermaid block that redraws what one sentence already said costs the reviewer more than it gives.
 - **No marketing copy.** "Comprehensive refactor", "unlocks a powerful workflow" — drop it. Be flat.
 - **No "Skipped locally" section.** If you're handing off a gate to CI, that's a process decision and doesn't need to be debated in the PR body. The implement-task skill governs when gates are required at task-completion time.
 - **No screenshots unless they actually clarify the change.** A modal that's "wider now" doesn't need a before/after; a layout shift that's hard to describe might.
-- **No hand-written blast radius.** The section is generated. A prose guess at what a change touches is exactly the claim a reviewer cannot check.
+- **No blast radius or CRAP metrics block.** CI computes and posts both on every PR. A pasted copy goes stale on the next push and duplicates what CI already reports, and a prose guess at what a change touches is exactly the claim a reviewer cannot check.
 
 ## Title vs body
 
@@ -226,10 +127,6 @@ Drop it on the last line. Reviewers click through to read the original task; the
 
 - **Don't paste an AI-generated summary** of the diff. Concise human framing beats verbose mechanical narration.
 - **Don't open a PR without the Asana link** — it's what makes the PR findable from the task tracker.
-- **Don't open a PR without the CRAP block.** "The diff is one line" and "nothing here is risky" are the cases the block answers in one line — write that line.
-- **Don't pad the CRAP table.** One row per changed function, filtered by the four rules above. A table longer than the paragraph defeats the point.
 - **Don't expand a Summary just to look thorough.** A one-line PR description for a one-line change is correct, not lazy.
 - **Don't leave an architectural change undescribed.** Short is the rule; silent is not. If the PR moves a boundary, changes who owns state, or reorders a migration, that belongs in the body even when the diff is small.
-- **Don't open a PR without a Blast radius section.** It is the one section every body has, whatever the size of the diff.
-- **Don't edit the generated radius** to make it shorter or tidier. If the number is alarming, that is information the reviewer wants; put the reassurance in your paragraph, not in the file list.
 - **Don't bury a Stacked-on PR** in the middle of the body. First line of the summary, or its own line above it.

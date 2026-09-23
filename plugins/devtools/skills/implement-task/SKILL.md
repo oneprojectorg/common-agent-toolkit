@@ -1,6 +1,6 @@
 ---
 name: implement-task
-description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), `/simplify` + `/review`, then generate the blast radius and open a draft PR whose description ends with the CRAP metrics block, and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
+description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), the CRAP pass (score every changed function, then add tests or split until nothing sits at 30 or worse), `/simplify` + `/review`, then open a draft PR and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
 ---
 
 Drives a single Asana task from picked → ready-for-review. This skill owns **all** mutation of the Asana task: the atomic claim, every section move, every comment we post, the feature branch, and the PR. `pickup-task` only selects which task to work on.
@@ -25,7 +25,7 @@ These apply to every run of this skill. No exceptions, no "the diff is tiny" car
 1. **ALWAYS run `pnpm format` before every commit.** Every commit, including the plan commit, the first RGR commit, and any fixup commits. Details in Step 7.
 2. **Every PR opens in draft mode** (`gh pr create --draft --base dev`). Agents never open straight to "ready for review" — the author marks it ready when they're satisfied. Details in Step 8.
 3. **Every PR has an assignee set** — the GitHub user mapped from the Asana task's assignee (`scazan` / `valentin0h` / `nourmalaeb`). If the assignee doesn't map, skip the assignment rather than guessing. Details in Step 8.
-4. **Every PR description ends with the CRAP metrics block**, directly above the Asana link. No carve-out for a one-line diff or a docs-only diff — a docs-only diff gets the one-line form. `pr-description` owns the score, the table, and the filtering rules. Details in Step 8.
+4. **Score the diff with CRAP and iterate on it** before `/simplify` + `/review`. Every changed function at 30 or worse gets a test, a split, or a one-line reason. The numbers drive your loop; they do not go in the PR body — CI posts its own. Details in Step 7.
 
 ## Step 1 — Claim and branch
 
@@ -252,10 +252,94 @@ walk the flow, inspect the data — and confirm the observed
 behavior matches what's expected. If the task has none, or its
 notes say to skip, fall back to the standard gates above.
 
+### CRAP metrics — measure, then iterate
+
+Once the gate suite is green, score every function the branch
+adds or changes. CRAP is the Change Risk Anti-Patterns score. It
+combines what a function costs to understand with how much of it
+the tests reach, so it points at the function where a test or a
+split cuts the most risk. The numbers are for you to act on here.
+CI computes and posts its own on the PR; they do not go in the PR
+body.
+
+```
+CRAP = cognitive² × (1 − coverage)³ + cognitive
+```
+
+`coverage` is a fraction from 0 to 1. Round the score to a whole
+number. **Complexity is cognitive, not McCabe cyclomatic.**
+`configs/fallow/README.md` in `common` owns the formula and the
+metric; cite it rather than restating it. Cognitive charges for
+nesting where cyclomatic counts branches, and the two diverge far
+past the margin on real code (`ReviewSummaryView` on #2090:
+cyclomatic 24 against cognitive 34, CRAP 600 against 1190).
+Fallow's own `crap` column is a third number again, because it
+hardcodes cyclomatic and reads coverage off static reachability.
+`pnpm health` prints that column with a note saying it is not the
+one that gates. Don't act on it.
+
+Read the numbers off the tool instead of counting by hand:
+
+```bash
+git diff origin/dev...HEAD   # the functions you owe a score
+pnpm test:coverage           # needs Docker + `pnpm w:api test:supabase:start`; ~4 minutes
+pnpm health
+```
+
+`pnpm health` names the worst function in every changed file at
+CRAP 30 or worse, with its cognitive score and its measured
+coverage. For the functions under that line,
+`scripts/lib/fallow-crap.mjs` shows the inventory pass it reads
+them from: `fallow health --quiet --complexity --max-cyclomatic 0
+--max-cognitive 0 --format json` returns every function with its
+`path`, `name`, `line`, and `cognitive`. Work from the diff, not
+from your memory of the task. A function you touched in a
+`/review` pass counts.
+
+`coverage` is measured, not guessed. `pnpm test:coverage` merges
+the instrumented runs into `coverage/coverage-final.json`, and the
+score reads each function's statement coverage over its line
+span. A report older than your last edit is not a source;
+`pnpm health` reports `CRAP: STALE` rather than a green it cannot
+back up. Estimate only when the function lives in a workspace
+held out of instrumentation: `UNMEASURABLE` in
+`scripts/lib/fallow-crap.mjs` is that list (`apps/app` and
+`packages/sense` today). Read the constant; don't infer it from
+the path. Where it applies, divide the branches a test exercises
+by the function's total branches, and use 0 when no test reaches
+the function.
+
+Then iterate. For every changed function at 30 or worse, pull
+the cheaper lever:
+
+1. **Add a test that reaches the untested branches.** Coverage is
+   cubed in the formula, so it moves the score fastest. A
+   function at cognitive 12 drops from 156 to 24 when coverage
+   goes from 0% to 60%.
+2. **Split or flatten the function** when the test is the
+   expensive part: extract the nested arms, replace nested
+   conditionals with early returns, lift a loop body into its
+   own function. Each cut lowers `cognitive`, which is squared.
+
+After each change, re-run `pnpm typecheck` and `pnpm test`, then
+`pnpm test:coverage` and `pnpm health` again. Repeat until no
+changed function is at 30 or worse, or until every remaining
+score has a reason you can state in one line (the retry branches
+need a live queue; the component sits in an `UNMEASURABLE`
+workspace and the e2e suite exercises it). Record that reason in
+the commit message or the task comment so the reviewer, and the
+next pass, can see it. "Nothing here is risky" is not a reason;
+the score is.
+
+A late fix invalidates the numbers. If the `/simplify` or
+`/review` passes below change any function after you scored it,
+run `pnpm test:coverage` and `pnpm health` once more before you
+open the PR, and iterate again on anything they push over 30.
+
 ### Mandatory cleanup + review pass
 
-Once the gate suite is green, run — in this order, every time,
-no exceptions:
+Once the gate suite is green and the CRAP pass is done, run — in
+this order, every time, no exceptions:
 
 1. `/simplify` — strip cruft, dead code, premature abstractions,
    and over-engineered scaffolding from the diff. Apply the
@@ -323,31 +407,9 @@ post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
 
 ### Done
 
-When gates are green and `/simplify` + `/review` are clean, build the PR body **before** opening the PR.
+When gates are green and `/simplify` + `/review` are clean, write the PR body — `pr-description` owns what goes in it. CI computes and posts the blast radius and the CRAP metrics on every PR; the scores you iterated on in Step 7 stay out of the body.
 
-Generate the blast radius — every file that transitively imports something this branch changed:
-
-```bash
-node --no-warnings "${CLAUDE_PLUGIN_ROOT}/skills/blast-radius/scripts/blast-radius.ts" > /tmp/blast-radius.md
-```
-
-Run it once, here, and paste its output into the body verbatim as the `## Blast radius` section, directly above the CRAP metrics block. It is required in every PR — see `pr-description` for where it goes in the body and `blast-radius` for the tool, its flags, and what it costs on a wide diff. A leaf change reports that it is a leaf; that is a result, not a failure.
-
-Then open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
-
-### CRAP metrics in the PR description
-
-Compute the CRAP metrics **before** you call `gh pr create`, and end the body with them (Hard rule 4). Read `pr-description` for the score, the table columns, and the four filtering rules; this step is only about when to do it.
-
-1. List the functions the branch adds or changes:
-   ```bash
-   git diff origin/dev...HEAD
-   ```
-   Work from the diff, not from your memory of the task. A function you touched in a `/review` pass counts.
-2. Score each one. Cognitive complexity and measured coverage both come from the tool — `pnpm test:coverage` then `pnpm health`. Estimate coverage only for a function in a workspace `UNMEASURABLE` holds out of instrumentation (`scripts/lib/fallow-crap.mjs`), and label the block as an estimate in that case. `pr-description` has the commands and the reasoning.
-3. Paste the block into the body, above the Asana link.
-
-The metrics report the diff you are about to open, so a late fix invalidates them. If a `/review` iteration or a gate failure changes any function after you compute the block, recompute it. Do not reuse a block from an earlier iteration, and do not report a score you did not derive from the current diff.
+Open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
 
 ### Assign the PR to the Asana assignee
 
