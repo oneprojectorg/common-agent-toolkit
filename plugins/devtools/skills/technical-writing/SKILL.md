@@ -1,6 +1,6 @@
 ---
 name: technical-writing
-description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. An ADR records the target architecture and the reason for it, never the migration route, never a premise that deserves its own backfilled ADR, and never a question the team has not actually decided. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule — comments decay — so write one only when the reasoning is not obvious from the code, then keep it to one short line.
+description: Write documentation in ASD-STE100 Simplified Technical English — 20-word instructions, 25-word descriptions, one topic per paragraph, active voice with a named actor, simple tenses, one word per meaning, and no editorializing or filler ("It is important to note", "Crucially", "Keep in mind", "not just X, it is also Y"). A structured document (an ADR, a runbook, a design note) does not explain its own template — a field holds its value and not a discussion of the value, a section describing the format gets deleted, context belonging to the change goes in the PR body, and abstract framing is replaced by the specific decisions at stake. An ADR records the target architecture and the reason for it, never the migration route, never a premise that deserves its own backfilled ADR, and never a question the team has not actually decided. ADR numbers are claimed on merge by scripts/number-adrs.sh from a `draft-*.md` file — never hand-pick or reuse one — and an Accepted ADR must not derive its rule from a Proposed one. TSDoc documents the contract, not the shape the language already states — skip types, interfaces, enums, Drizzle-derived Zod schemas, `@throws` and the return type; keep `@deprecated` and a worked `@example`. Use when you write or edit a README, doc page, ADR, runbook, release note, skill body, help text, error message, or code comment that a person reads. A code comment gets one extra rule — comments decay — so write one only when the reasoning is not obvious from the code, then keep it to one short line.
 ---
 
 Simplified Technical English (STE) keeps a document unambiguous. It helps a reader who skims, who translates the text, or who reads English as a second language. Apply these rules to any prose a person reads, and to your own answer when the user asks for documentation.
@@ -85,6 +85,21 @@ The second ADR review pass (#2074, #2075) drew the same correction from a differ
 - **The why is the content.** The same review that cut three sections asked for one to be *added*: *"I wonder if we can articulate why we would need them and where … Let's add a big ol' 'why' to this ADR?"* Most of the length an ADR should carry is the reason, not the rule.
 
 The compression target is real. One eight-paragraph Context section was answered with two sentences the reviewer wrote out in the comment: phases are baked into `instance_data` today, and we want them as separate entities so they gain what profile entities have. If your Context can be said that briefly, say it that briefly.
+
+### ADR numbers are claimed on merge, and an Accepted ADR can't rest on a Proposed one
+
+A new ADR lands as `docs/adr/draft-<slug>.md`; `scripts/number-adrs.sh` assigns the number when it merges, so two branches in flight can't both claim 0005. PR #2145 wrote `0005-declare-budget-units-on-the-template.md` by hand while `CLAUDE.md` and `AGENTS.md` already pointed "ADR 0005" at the i18n-key decision — two documents under one identifier, and every existing reference silently repointed. Name the file `draft-*` and let the merge job number it; never reuse or hand-pick a number.
+
+**And check the status of anything your decision depends on.** `Proposed` means not in force, so an `Accepted` ADR that derives a rule from a `Proposed` one has a contract that can change underneath it. Either promote the dependency or mark your own as Proposed too.
+
+### TSDoc: document the contract, not the shape the language already states
+
+The TSDoc ADR (#2075) was closed rather than merged, and the review that closed it is the usable guidance:
+
+- **Types, interfaces and enums are their own documentation.** *"These will rarely need documentation since types, interfaces, and enums are essentially documentation of something already. The var name should be clear. If it needs documentation at this level I think it's poorly named."* Same for a Zod schema derived from a Drizzle type — it is visibly a representation of the table.
+- **Don't write `@throws`, and don't restate the return type.** Both are inferable from the code; a tag that repeats the signature is maintenance with no reader.
+- **`@deprecated` and `@example` earn their place.** `@deprecated` tells a caller something the type cannot. Examples pay off on anything public-facing or intricate — and the ADR was asked to say *why* and *where*, not just to allow them.
+- **A convention document needs its own why.** *"Let's add a big ol' 'why' to this ADR"* — a rule with no stated reason gets applied by rote and argued about forever.
 
 ## Checklist
 
