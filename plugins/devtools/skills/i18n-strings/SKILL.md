@@ -1,6 +1,6 @@
 ---
 name: i18n-strings
-description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. `pnpm i18n:check` is a CI merge gate — a key whose English value changed since the merge base must change in every other locale, so run it before pushing any copy edit, and when you repoint an existing key at a new case read its value in every dictionary rather than trusting en.json (a phone-conflict error reusing an account-conflict key told seven locales the wrong credential). Accessibility-facing strings (aria-label, placeholder, title, alt) count as user-facing and must go through t() too, and so do validation diagnostics composed in @op/common — the service layer has no useTranslations, so return a code the app maps to t() copy rather than a hardcoded English message. @op/sense components are i18n-agnostic and ship English defaults, so the app call site is the only place that can translate them. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. toast.error(error.message) is the most common way raw server text reaches a user — a tRPC failure puts database ids or a serialized Zod payload in the toast, untranslated — so switch on the error code and render t() copy. Before acting on a reported dictionary corruption, scan every locale file for U+FFFD, because a bidirectional-text rendering artifact in a review UI looks identical to a real one. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. A noun and a verb that share one English spelling need two keys, because other languages inflect them differently. services/emails is English-only today (no recipient locale at send time) — follow that, don't wrap it. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). A namespaced key belongs to the feature that owns the concept — borrowing `editor.undoAction` for a decisions flow couples their copy — and a key reachable only from stored data (a persisted phase name) survives no grep, so check before deleting it in a namespace sweep. The backend senders (`services/emails`, `services/workflows`) are English-only by structure, not by oversight — no next-intl dependency, no stored locale preference, no render boundary — decline the bot finding and cite #2161 / #2163 rather than wrapping SMS or email copy in t(). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
+description: Wrap every user-facing string in apps/app with translations (i18n) — useTranslations in client, TranslatedText in server components, getTranslations for generateMetadata. The dictionaries hold two key shapes since the namespace migration: feature copy under a namespace as a camelCase id naming the string's role (useTranslations('onboarding') then t('fullName')), and short generic labels — at most four words, no `{`, `<` or `.` — still keyed on the English source string at the top level. No key may contain a period at any depth, and every key in a scoped t() call has to live under that namespace, because one reaching into another resolves to nothing while reading as correct. `pnpm i18n:check` is a CI merge gate — a key whose English value changed since the merge base must change in every other locale, so run it before pushing any copy edit, and when you repoint an existing key at a new case read its value in every dictionary rather than trusting en.json (a phone-conflict error reusing an account-conflict key told seven locales the wrong credential). Accessibility-facing strings (aria-label, placeholder, title, alt) count as user-facing and must go through t() too, and so do validation diagnostics composed in @op/common — the service layer has no useTranslations, so return a code the app maps to t() copy rather than a hardcoded English message. @op/sense components are i18n-agnostic and ship English defaults, so the app call site is the only place that can translate them. Hooks call useTranslations directly rather than hardcoding toast copy. A t() key missing from the dictionaries renders as the raw key with no ICU interpolation, so verify the key exists in every locale. toast.error(error.message) is the most common way raw server text reaches a user — a tRPC failure puts database ids or a serialized Zod payload in the toast, untranslated — so switch on the error code and render t() copy. Before acting on a reported dictionary corruption, scan every locale file for U+FFFD, because a bidirectional-text rendering artifact in a review UI looks identical to a real one. Delete stale keys across all dictionaries when their UI goes away, and never hardcode a list separator. A noun and a verb that share one English spelling need two keys, because other languages inflect them differently. services/emails is English-only today (no recipient locale at send time) — follow that, don't wrap it. Also use the i18n useRouter (not next/navigation), and thread the actual locale into hand-built server-side redirect URLs (extract it from x-pathname; never hardcode /en). A namespaced key belongs to the feature that owns the concept — borrowing `editor.undoAction` for a decisions flow couples their copy — and a key reachable only from stored data (a persisted phase name) survives no grep, so check before deleting it in a namespace sweep. The backend senders (`services/emails`, `services/workflows`) are English-only by structure, not by oversight — no next-intl dependency, no stored locale preference, no render boundary — decline the bot finding and cite #2161 / #2163 rather than wrapping SMS or email copy in t(). Use when adding or editing display text, button labels, headings, page titles, error messages, toasts, aria-labels, or any string a user or a screen reader will encounter; when navigating programmatically; or when building a redirect URL in a server utility or middleware.
 ---
 
 ## Rule
@@ -32,27 +32,35 @@ Translate **every** string that lands in the same surface. The same PR also wrap
 ```tsx
 import { useTranslations } from "@/lib/i18n";
 
-const t = useTranslations();
-return <span>{t("Save changes")}</span>;
+const t = useTranslations('decisions.proposals');
+return <span>{t('amountRequested')}</span>;
+
+const shared = useTranslations();     // top-level generic labels only
+return <Button>{shared('Cancel')}</Button>;
 ```
 
 ## Server components
 
 ```tsx
 import { TranslatedText } from "@/components/TranslatedText";
-return <TranslatedText text="Save changes" />;
+return <TranslatedText text="Cancel" />;            // top-level label
+
+import { getTranslations } from "@/lib/i18n";
+const t = await getTranslations({ locale, namespace: 'decisions.proposals' });
+return <span>{t('amountRequested')}</span>;         // namespaced copy
 ```
 
 ## `generateMetadata` (page titles, descriptions)
 
-Server-side metadata uses `getTranslations` from `next-intl/server`:
+Server-side metadata uses `getTranslations` from `@/lib/i18n` (the wrapper, not `next-intl/server` directly — it types the keys from `en.json`):
 
 ```ts
-import { getTranslations } from 'next-intl/server';
+import { getTranslations } from '@/lib/i18n';
 
-export async function generateMetadata() {
-  const t = await getTranslations();
-  return { title: t('Overview') };
+export async function generateMetadata({ params }) {
+  const { locale } = await params;
+  const t = await getTranslations({ namespace: 'shell', locale });
+  return { title: t('overviewTitle') };
 }
 ```
 
@@ -100,20 +108,36 @@ Never render a raw upstream / library / API error string to the user — it's un
 
 ## Dictionary location
 
-`apps/app/src/lib/i18n/dictionaries/<lang>.json` — one file per language. Keys are the English source strings. The set of supported locales is whichever `.json` files live in that directory — check the folder, don't hardcode the list here.
+`apps/app/src/lib/i18n/dictionaries/<lang>.json` — one file per language. The set of supported locales is whichever `.json` files live in that directory — check the folder, don't hardcode the list here.
+
+Each file has **two shapes in it**, because the namespace migration (ADR 0005, PRs #2107–#2122) moved feature copy without flattening the generic labels:
+
+```jsonc
+{
+  "Cancel": "Cancel",                         // top level: English source string as the key
+  "auth": { "signInAction": "Sign in" },      // namespace: camelCase id as the key
+  "decisions": { "proposals": { "amountRequested": "Amount requested" } }
+}
+```
+
+A namespaced id **names the string's role, not its wording** — `…Heading`, `…Title`, `…Description`, `…Label`, `…Action`, `…Hint`, `…Status`, `…Count`, `…Error`, `…Success` are the suffixes the existing keys are consistent about. Match the neighbours rather than inventing a spelling. Two hard rules from `CLAUDE.md`:
+
+- A shared label keeps its English text as a top-level key **only if** it is at most four words and contains no `{`, `<` or `.`. Anything longer is a sentence, and a sentence belongs to a feature.
+- **No key contains a period at any depth** — next-intl reads one as a path separator, so a key with a `.` in it is a namespace you did not mean to create.
 
 ## Adding a new string
 
-1. Use `t("New string")` (or `<TranslatedText>`) in code first.
-2. Add `"New string": "New string"` to `en.json`.
-3. Add a translation for **every other `.json` file** in `apps/app/src/lib/i18n/dictionaries/`. List them with `ls apps/app/src/lib/i18n/dictionaries/` so you don't miss one when the locale set changes. Translate the value into the target language; keep the key identical to the English source. Don't leave a locale missing or stubbed with the English string.
-4. **Keep key order in sync across every locale file.** Put new keys in the same position — one contiguous block — in every `.json`, not appended in random order per file, so the dictionaries diff side by side. PR #1480 review: "a nit here.. it's nice to keep the languages in sync in terms of order of keys so they can be easily compared."
+1. **Decide the key before you write it.** Feature-scoped copy gets a namespaced camelCase id; a short generic label that belongs to no feature (Cancel, Undo, Clear, Back) stays a top-level English-source key. Which feature owns the concept is the question — see *A namespaced key belongs to the feature that owns the concept* below.
+2. **Scope `t` to the namespace, then use the bare id.** Client: `const t = useTranslations('onboarding')` then `t('fullName')`. Server: `const t = await getTranslations({ locale, namespace: 'onboarding' })`, or `getTranslations('ns')` in a request-scoped call. Import both from `@/lib/i18n`, which types them from `en.json` — so a missing or misspelt interpolation value is a compile error. Every key in a scoped call has to live under that namespace: a scoped `t` reaching for another feature's id resolves to nothing at runtime and reads as correct in review (#2082).
+3. Add the key to `en.json`, inside its namespace object.
+4. Add a translation for **every other `.json` file** in `apps/app/src/lib/i18n/dictionaries/`. List them with `ls apps/app/src/lib/i18n/dictionaries/` so you don't miss one when the locale set changes. Translate the value into the target language; keep the key identical across files. Don't leave a locale missing or stubbed with the English string.
+5. **Keep key order in sync across every locale file.** Put new keys in the same position — one contiguous block, in the same namespace — in every `.json`, not appended in random order per file, so the dictionaries diff side by side. PR #1480 review: "a nit here.. it's nice to keep the languages in sync in terms of order of keys so they can be easily compared."
 
 ### `pnpm i18n:check` is a merge gate — an English edit obliges every locale
 
 `pnpm i18n` checks key parity and ICU `{argument}` / `<tag>` parity. `pnpm i18n:check` adds the one that catches copy edits: **a key whose English value changed since the PR's merge base must change in every other locale too.** CI runs it against the base branch next to the format check, with no opt-out. It supersedes the old `check:i18n` (PR #2097).
 
-Natural-text keys used to enforce this by accident — editing the English *renamed* the key in all eight files, so a stale translation was impossible. ADR 0005 (#2082) moves toward ID keys, where an English-only edit leaves seven translations silently stale and nothing fails. Run `pnpm i18n:check` before you push any copy change, not just a new-key change.
+Natural-text keys used to enforce this by accident — editing the English *renamed* the key in all eight files, so a stale translation was impossible. ADR 0005 (#2082) chose id keys and the migration landed in #2107–#2122, so an English-only edit now leaves seven translations silently stale and nothing else fails. Run `pnpm i18n:check` before you push any copy change, not just a new-key change.
 
 ### Repointing an existing key at a new case: read the value, not the key
 
@@ -123,7 +147,7 @@ So when you reuse a key for a case it wasn't written for, open every dictionary 
 
 ### One English word, two grammatical roles, two keys
 
-Keys are English source strings, so two uses that collapse in English — a noun and a verb spelled the same way ("Review" the thing, "Review" the action; "Vote", "Comment", "Post") — collide on one key, and every locale that inflects them differently gets one of the two wrong. Give each role its own key even though `en.json` maps them to the same word. PR #1905: *"This uses a key because of the difference with the noun versus the verb form between english and other languages. English does not differentiate so we need to have a separate key."*
+A top-level key *is* its English source string, so two uses that collapse in English — a noun and a verb spelled the same way ("Review" the thing, "Review" the action; "Vote", "Comment", "Post") — collide on one key, and every locale that inflects them differently gets one of the two wrong. Give each role its own key even though `en.json` maps them to the same word. PR #1905: *"This uses a key because of the difference with the noun versus the verb form between english and other languages. English does not differentiate so we need to have a separate key."*
 
 The reviewer's flag to expect is "this key already exists, reuse it." The answer is that the *string* exists and the *meaning* doesn't — say which two roles you're separating so the duplicate doesn't get cleaned up later by someone deduplicating the dictionary.
 
