@@ -1,6 +1,6 @@
 ---
 name: workspace-shortcuts
-description: pnpm w:<workspace> <command> shortcuts (w:app, w:api, w:db, w:sense, w:emails, w:supabase, w:realtime, w:translation, w:workflows, w:ai, w:e2e). Use before any pnpm command targeting a workspace — typecheck, test, lint, build, generate, dev. Note w:ui is gone with packages/ui; Storybook is pnpm w:sense dev.
+description: pnpm w:<workspace> <command> shortcuts (w:app, w:api, w:common, w:db, w:sense, w:emails, w:supabase, w:realtime, w:translation, w:workflows, w:ai, w:e2e). Use before any pnpm command targeting a workspace — typecheck, test, lint, build, generate, dev. Note w:ui is gone with packages/ui; Storybook is pnpm w:sense dev.
 ---
 
 ## Shortcut form
@@ -13,6 +13,7 @@ description: pnpm w:<workspace> <command> shortcuts (w:app, w:api, w:db, w:sense
 |---|---|
 | `w:app` | `apps/app` (Next.js frontend) |
 | `w:api` | `services/api` (tRPC API) |
+| `w:common` | `packages/common` (services, schemas, the `testing` harness) |
 | `w:db` | `services/db` (Drizzle schema + migrations) |
 | `w:sense` | `packages/sense` (the design system) |
 | `w:ai` | `packages/ai` |
