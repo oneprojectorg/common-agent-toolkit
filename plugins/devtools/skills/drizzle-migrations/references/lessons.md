@@ -1,0 +1,17 @@
+# drizzle-migrations: lessons
+
+- A migration timestamped before the last applied one never runs in deployed envs; regenerate after rebasing (PR #1510)
+- Deleting a migration is only safe if no database has it recorded (generated locally, never on `dev`/`main`) (PR #1510)
+- Unique index on source alone let two concurrent merge edges (source+target) both commit (PR #1789)
+- A generic edge table can't enforce "both ends are proposals"; the shipped table is keyed on `proposals` (PR #1801)
+- Keep a dangling relationship when its absence must be displayed (merge history, GDPR deletion); pair with a marker column (PR #1761)
+- `phoneVerifications` should not duplicate `auth.users.phone` / `phone_confirmed_at` (PR #1951)
+- A specific table now is reversible (`ADD COLUMN type`); a populated generic table is not; a generic name only pays if the writer generalizes too (PR #1951, #1956)
+- `profileUsers.email` is only for join-free search lookups and vectors; contact goes through the auth email (PR #1919, #1886)
+- A bitfield backfill was refused in the migration pipeline; redo as an ops script (PR #1825)
+- `processInstances.findFirst({ where: { profileId } })` returned an archived DRAFT; add the status filter (PR #1658)
+- `buildWhereClause(table)` shares the predicate between aliased `findMany` and the count (PR #1553)
+- Access-user lookups migrated to `db.query` (RBQ v2); reviewers ask for it on new code (PR #1244)
+- Use `$inferSelect`, not `InferModel` (PR #1264)
+- Align FK suffix with neighbouring tables (`addedByProfileUserId`) (PR #1186)
+- Drop cargo-culted `IF NOT EXISTS` guards from migrations (PR #1274)

@@ -1,14 +1,16 @@
 {
   "name": "devtools",
   "description": "Developer skills, hooks, and conventions for the One Project common monorepo.",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "author": {
     "name": "One Project",
     "url": "https://github.com/oneprojectorg"
   },
+  "dependencies": [
+    "vercel@claude-plugins-official"
+  ],
   "skills": [
     "./skills/access-control",
-    "./skills/agent-setup",
     "./skills/api-endpoints",
     "./skills/asana-api",
     "./skills/blast-radius",
@@ -17,7 +19,6 @@
     "./skills/component-file-structure",
     "./skills/dev-environment",
     "./skills/drizzle-migrations",
-    "./skills/file-uploads",
     "./skills/i18n-strings",
     "./skills/implement-task",
     "./skills/pickup-task",
@@ -28,7 +29,6 @@
     "./skills/service-layer-structure",
     "./skills/technical-writing",
     "./skills/test-conventions",
-    "./skills/vercel-react-best-practices",
     "./skills/workspace-shortcuts"
   ]
 }

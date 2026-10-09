@@ -1,0 +1,34 @@
+[
+  {
+    "query": "review this branch's diff for anything our reviewers usually push back on",
+    "should_trigger": true
+  },
+  {
+    "query": "is it ok to use `as any` here to get the drizzle row type to match",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got a nested ternary in this component for three states, what's our preferred style",
+    "should_trigger": true
+  },
+  {
+    "query": "what should I name a function that throws if the user isn't a member \u2014 checkMember, validateMember, or something else",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm also fixing an unrelated bug I noticed in the same PR, that's fine right?",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I run storybook locally",
+    "should_trigger": false
+  },
+  {
+    "query": "open the release PR from dev to main",
+    "should_trigger": false
+  },
+  {
+    "query": "pick up the next agent task from asana",
+    "should_trigger": false
+  }
+]

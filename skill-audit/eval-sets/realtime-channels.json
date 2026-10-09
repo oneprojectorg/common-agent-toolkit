@@ -1,0 +1,30 @@
+[
+  {
+    "query": "when a proposal is updated the other users' lists don't refresh until reload, how do we wire realtime invalidation",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new Channels builder for decision process comments",
+    "should_trigger": true
+  },
+  {
+    "query": "should I call utils.decision.invalidate() after the mutation or is there a channel for that",
+    "should_trigger": true
+  },
+  {
+    "query": "users joining a process should see the member count update live for everyone else",
+    "should_trigger": true
+  },
+  {
+    "query": "add an index on proposals.processId to speed up the list query",
+    "should_trigger": false
+  },
+  {
+    "query": "set up a cron job that sends a weekly digest email",
+    "should_trigger": false
+  },
+  {
+    "query": "fix the typo in the onboarding modal heading",
+    "should_trigger": false
+  }
+]

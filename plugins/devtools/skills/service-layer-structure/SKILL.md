@@ -1,63 +1,38 @@
 ---
 name: service-layer-structure
-description: How to organize a feature's service layer in packages/common/src/services/<feature>/ — one file per operation (createX / getX / listX / updateX / deleteX), all named exports, named-params object signatures, auth-assert first, transactions with advisory locks for concurrent ops, Common errors only. Plus the auxiliary file conventions — schemas.ts (Zod + DTO types), constants.ts (shared limits + security allowlists), utils.ts (pure helpers), <feature>Auth.ts (domain assertions that return useful context), channelScope.ts (realtime fan-out helpers), and ordering.ts (sort-key utilities). Sorting or filtering in memory is the tell that a query is unfinished — a secondary read may ship unpaginated, but name the expected upper bound and file the follow-up, and never filter client-side after paging (the count, the empty state and the next page all inherit the lie). One helper does not earn its own file; list utils/ first, and consider deleting a wrapper that only names one expression. A flag that opts into COST (a correlated COUNT, an extra join) is defensible — enumerate the callers that would otherwise pay it — while a flag that changes WHICH rows come back is two operations. A join is the wrong shape when a per-row privacy flag has to be evaluated — flattening forces a hand-rolled collapse, which is where the check gets skipped. Cursor pagination rules — always include an id tie-breaker so rows that share a sort-key timestamp don't get skipped, and gate the cursor on `cursorValue != null` so falsy-but-valid sort values (e.g. rubric score 0) keep paging. Resolution rules — when picking one row by recency, filter to candidates whose referenced configuration parent (phase, category, template) still exists, or "newest" can select a dead reference and 404 a resource the caller can actually reach. A lock protects nothing read before the transaction opened (re-read the guard's inputs inside it), only serializes writers that take the SAME lock (name the concurrent writer and match what it locks — a plain UPDATE takes a row lock, not your advisory one), and its "no such row" result is a concurrent delete you must surface rather than discard. A cap named in bytes is measured with TextEncoder, never String.length. Concurrency and API-surface rules — re-assert every gate inside the writing statement's WHERE (a JS-only check is a TOCTOU window; for an insert the unique index must cover every column the JS predicate covered, and an invariant about a RELATIONSHIP between rows — no cycles, no chains — needs an advisory lock over the sorted id pair because no index can express it) and give the concurrent-failure path its own error message; a read and its write sibling assert the same preconditions, and one bad input producing two different error types is the tell that one of them doesn't; a dedup or in-progress record written before an external call must be rolled back or marked retryable, or the early-return path suppresses the work forever; validate at a cache boundary with safeParse against the schema the type derives from, and treat a cache miss mid-update as "cannot patch"; don't disambiguate two rows on a column the write path leaves optional; re-evaluate an unpaginated read when its audience or its realtime refetch trigger changes; escape spreadsheet formula prefixes (= + - @) in any generated CSV carrying user-authored text; a bulk read (export, backfill, digest) consumes every page instead of treating page one as the whole set, and surfaces detected truncation through the flag the UI renders rather than a log line; log a warning when an "impossible" branch fires instead of skipping silently; re-export by name rather than `export *` when only one symbol should be public. A bound you tighten has to accept the rows already stored, or an unrelated edit turns an over-limit row into a record nobody can save. Use when adding a new service operation, adding a new feature directory under @op/common, organizing helpers around a service file, designing a paginated listX, writing a guarded update, adding to a barrel index.ts, deciding where a piece of logic belongs, or writing a transaction.
+description: Layout of @op/common services in packages/common/src/services/<feature>/ — one op per file, named params, assert first, transactions and locks, schemas.ts/utils.ts/<feature>Auth.ts, cursor pagination, bulk reads, exports. Use when adding or editing a createX/getX/listX/updateX op or helper there.
 ---
 
-The service layer in `packages/common/src/services/<feature>/` is the home of the business logic that tRPC routers thinly wrap. Conventions here are the most consistent in the codebase — reviewers spot deviations quickly.
+Business logic lives in `packages/common/src/services/<feature>/`. Routers are thin wrappers around it (see api-endpoints). Other skills own these topics, so this one only links to them: query syntax is in drizzle-migrations, channel wiring in realtime-channels, naming/errors/params/logging in code-conventions, and authorization primitives in access-control.
 
-## Directory layout
-
-For a feature `foo`, the directory looks like:
+## Layout
 
 ```
-packages/common/src/services/foo/
-├── index.ts               # barrel — `export * from './<file>'` per export
-├── schemas.ts             # Zod schemas + their z.infer DTO types — small features
-├── schemas/               # — OR — multi-file split for larger features
-│   ├── index.ts
-│   ├── foo.ts
-│   └── otherFoo.ts
-├── constants.ts           # shared limits, allowlists, magic strings
-├── utils.ts               # pure helpers (no I/O)
-├── fooAuth.ts             # domain-specific assertion helpers (assertFooAccess, etc.)
-├── channelScope.ts        # realtime fan-out helpers (getProfileIdsForFoo, etc.)
-├── ordering.ts            # (optional) sort-key utilities if the feature is ordered
-├── createFoo.ts           # one operation per file
-├── getFoo.ts
-├── listFoo.ts
-├── updateFoo.ts
-├── deleteFoo.ts
-└── <opName>.test.ts       # colocated Vitest, when present
+services/foo/
+├── index.ts          # barrel
+├── schemas.ts        # Zod schemas + z.infer DTO types (or schemas/ dir when large)
+├── constants.ts      # limits, allowlists, provider caps — with why-comments
+├── utils.ts          # pure helpers, no I/O
+├── fooAuth.ts        # assertFooAccess helpers that return resolved context
+├── channelScope.ts   # realtime fan-out target resolvers
+├── ordering.ts       # sort keys + lockX helpers (optional)
+├── storage.ts        # object-storage ops (optional)
+├── createFoo.ts      # one operation per file
+└── listFoo.ts
 ```
 
-Look at `packages/common/src/services/resources/` (single `schemas.ts`) and `packages/common/src/services/decision/` (`schemas/` directory) for the two valid shapes. Single file is the default; split into a directory when the schema file would otherwise grow past a few hundred lines or hold several unrelated DTO families.
+Reference shapes: `services/resources/` (single `schemas.ts`, `resourceAuth.ts`, `channelScope.ts`, `ordering.ts`) and `services/decision/` (`schemas/` dir).
 
-## One file per operation, single named export
+- One operation per file. The file's single named export has the same name as the file, and there are no default exports.
+- Consumers import from `@op/common` (server) or `@op/common/client` (client-safe), never from the op file.
+- Shared helpers go in `utils.ts` / `<feature>Auth.ts` / etc., not in an op file. A single helper doesn't earn its own file: list `utils/` first, and consider deleting a wrapper that only names one expression.
+- `export * from './x'` exports everything in that file. When it holds internals, re-export by name (`export { categoryTermUri } from './proposalTaxonomy'`).
+- If a promoted helper relies on a caller contract that types can't express, document that contract in JSDoc.
+- Never put I/O in `utils.ts`, and never expose `db` from a service.
 
-Every service operation lives in its own file. The export name matches the file name:
+## Operation shape
 
 ```ts
-// packages/common/src/services/resources/createCollection.ts
-export const createCollection = async ({ ... }) => { ... };
-```
-
-- One named export per file. No `default export`.
-- The `index.ts` is a barrel that re-exports every file: `export * from './createCollection'`. Consumers always import from `@op/common`, not from the operation file directly.
-- Don't bundle two operations into one file because they share helpers. Pull the helper into `utils.ts` (or `<feature>Auth.ts`, etc.) and keep operations separated.
-
-## Operation function shape
-
-```ts
-import { db } from '@op/db/client';
-import { EntityType, resourceCollections } from '@op/db/schema';
-import { permission } from 'access-zones';
-
-import { ConflictError } from '../../utils/error';
-import { assertProfileTypeAccess } from '../access';
-import { appendCollectionToProfile, lockProfile } from './ordering';
-import type { CollectionDTO } from './schemas';
-import { buildCollectionForProfile } from './utils';
-
 export const createCollection = async ({
   authUserId,
   profileId,
@@ -67,391 +42,92 @@ export const createCollection = async ({
   profileId: string;
   name: string;
 }): Promise<CollectionDTO> => {
-  // 1. Auth assert FIRST — fail closed before any DB work.
-  await assertProfileTypeAccess({
-    user: { id: authUserId },
-    profileIds: [profileId],
-    policies: { [EntityType.DECISION]: { decisions: permission.ADMIN } },
-  });
-
-  // 2. Mutations that touch multiple rows wrap in a transaction.
-  return db.transaction(async (tx) => {
-    await lockProfile({ tx, profileId });
-
-    const [collection] = await tx
-      .insert(resourceCollections)
-      .values({ name })
-      .returning();
-    if (!collection) {
-      throw new ConflictError('Failed to create collection');
-    }
-
-    const link = await appendCollectionToProfile({
-      tx,
-      profileId,
-      collectionId: collection.id,
-    });
-
+  await assertProfileTypeAccess({ ... });          // 1. assert first, before any DB work
+  return db.transaction(async (tx) => {             // 2. multi-row writes in a transaction
+    await lockProfile({ tx, profileId });           // 3. feature lock helper, never raw pg_advisory_xact_lock
+    const [collection] = await tx.insert(resourceCollections).values({ name }).returning();
+    if (!collection) throw new ConflictError('Failed to create collection');
+    const link = await appendCollectionToProfile({ tx, profileId, collectionId: collection.id });
     return buildCollectionForProfile(collection, link);
   });
 };
 ```
 
-The rules:
-
-1. **Named-params object signature.** Always. `{ authUserId, profileId, name }`, never `(authUserId, profileId, name)`. See the `code-conventions` skill on parameter shape.
-2. **Explicit return type** — `Promise<CollectionDTO>`. Don't rely on inference for the public surface.
-3. **Auth assert first.** Any mutation (or any read that's not deliberately public) calls `assertXAccess` before any DB write. Public reads call the corresponding `assertXReadAccess` or the service folds the public sentinel via `resolveAccessUserIds`. See the `access-control` skill.
-4. **Transaction for multi-step mutations.** When the operation writes to two or more rows that must stay consistent, wrap in `db.transaction`. Single-row inserts/updates don't need it.
-5. **Throw Common errors only** — `UnauthorizedError`, `NotFoundError`, `ValidationError`, `ConflictError`, `ModerationError`, `RateLimitError`. Never raw `Error`; never let `access-zones` exceptions leak. See the `code-conventions` skill.
-6. **Comments explain WHY**, not what. Cite the constraint, the invariant, or the prior incident:
-   ```ts
-   // Listing never creates. The Default collection is created lazily on the
-   // first upload (createLink/createDocument -> resolveTargetCollection); until
-   // then a profile simply has no collection and we return an empty list.
-   ```
-
-## Transactions, locks, and deadlock avoidance
-
-When two operations can mutate overlapping rows concurrently, take advisory locks **in a deterministic order** so they can't deadlock.
-
-```ts
-// deleteResource.ts
-const sortedCollectionIds = [...collectionIds].sort();
-
-await db.transaction(async (tx) => {
-  // Sorted order prevents deadlocks against attach/reorder paths.
-  for (const collectionId of sortedCollectionIds) {
-    await lockCollection({ tx, collectionId });
-  }
-  // ... mutations
-});
-```
-
-- Sort the ids before taking locks. Two operations holding the same sort order can't form a cycle.
-- Pull lock helpers into the feature's `ordering.ts` (or equivalent) — don't open-code `pg_advisory_xact_lock`.
-- If two services share lockable resources, the lock helper lives in the lower-level service and the higher-level service imports it.
-
-### A lock protects nothing you read before you took it
-
-State loaded *before* `db.transaction` is a snapshot, and the lock inside the transaction does not retroactively cover it. PR #2095: `phaseBinding` read `process.phaseIds` up front, then validated a custom form's phase binding inside `writeWithPhaseLock` — so a phase removal committing in between let the form save against a phase that no longer exists. Re-read anything the guard depends on **inside** the transaction, and add the test for the case where the pre-transaction value and the in-transaction value disagree.
-
-**And the lock has to be one the other writer already takes.** An advisory lock only serializes writers that ask for the same advisory lock; a write path that does a plain `UPDATE` on the row never asks. The fix in #2095 was a `SELECT … FOR UPDATE` on the instance row rather than the advisory lock the review suggested, precisely because the process builder writes `instanceData` with a plain `UPDATE` and already takes that row lock. Before adding a lock, name the concurrent writer and check what it locks. State the lock order when a transaction takes two (there it is advisory-then-row, and row-only in the builder, so no cycle).
-
-**Check what the lock returns.** A `lockX` helper that resolves "no such row" is reporting a concurrent delete, and ignoring it lets the operation report success for a resource that is gone. PR #2124: `removeDecisionPublicAccess` discarded `lockProcessInstance`'s result, so a delete landing between the resolve and the lock turned into a 200 where the sibling `makeDecisionPublic` returns 404 for the same race. The data ended up correct either way — the defect was the status code, which is still a defect.
-
-## Re-check every gate inside the write, not just in JavaScript
-
-A precondition checked in JS and enforced by a later `UPDATE` has a window between them. Anything that can change concurrently — a phase advancing, a state transitioning, a row being claimed — must be re-asserted in the **same statement** that writes, as an extra `WHERE` predicate (or a `NOT EXISTS` / lateral subquery when the condition lives on another table). Then treat "zero rows updated" as the concurrency failure.
-
-PR #1703: `updateReview` checked `canEditSubmittedReview` (the assignment's phase must still be the instance's current phase) in JS, but the atomic `WHERE` only guarded `state = SUBMITTED`. "If the instance advances to the next phase in the gap between the JavaScript check and this `UPDATE`, the write succeeds — a reviewer could sneak in one final edit after the review phase is officially closed. The doc-comment on the function promises the review is frozen once the phase advances, so this is a violated contract."
-
-**For an insert, the constraint that closes the window is the index — and it has to cover every column the JS predicate covered.** A check like "does a live merge edge already exist for this source *and* target?" is decorative if the unique index is on the source alone: two concurrent callers both pass the check before either insert, and both edges commit. PR #1789. When you write a guard in a service, name the index that makes it hold under interleaving; if there isn't one, the guard needs an advisory lock or a wider index (see `drizzle-migrations`).
-
-**Some invariants no index can express — those need the lock.** A unique index constrains one row at a time, so it cannot rule out a *combination* of individually-legal rows. PR #1860: two administrators merging A into B and B into A concurrently both pass the target check before either insert, and the two edges are distinct, so every unique constraint is satisfied — yet the pair now forms a cycle, and the supersession filter removes both proposals *and* their review assignments from every active listing. The general test: if the rule is about a **relationship between rows** (no cycles, no chains, at most one live edge per pair in either direction, a sum across rows staying under a cap), state it as such, then take an advisory lock over the sorted pair of ids in the transaction — the same sorted-order discipline as the deadlock rule above, applied to a symmetric invariant.
-
-When the JS check and the SQL guard both exist, they fail for **different reasons — give them different error messages.** The JS path means "this was never in an editable state"; the empty-result path means "it was, and something changed underneath us." Reusing one message makes a production incident unreadable. PR #1703: reaching the second path warrants its own `ValidationError('Review state changed concurrently; please refresh and try again')`.
-
-## A read and its write sibling assert the same preconditions
-
-When one operation reads what another writes, they share a set of preconditions — and the write is the one that gets skipped, because the read is where the 404s were noticed. PR #1848: `getDecisionReviewAssignments` calls `assertInstancePhase`; `assignPhaseReviews` doesn't. On a legacy instance `getProposalIdsForPhase` ignores `phaseId` entirely, so an arbitrary phase id passes the pool check and creates assignment rows stamped with a phase that no phase-scoped query can ever surface — rows that exist and are unreachable.
-
-The diagnostic that catches this before a user does: **the same bad input produced two different error types.** `NotFoundError` on the read, `ValidationError` on the write, for one id. Whenever a pair of siblings disagrees about what an invalid input *is*, one of them is missing an assertion. Pull the shared preconditions into the feature's `<feature>Auth.ts` and call it from both, rather than restating them.
-
-## A cap named in bytes is measured in bytes
-
-`String.length` counts UTF-16 code units, so a `*_MAX_BYTES` constant enforced with it lets any non-Latin payload through at up to three times its stated size — CJK text or emoji stays under 65,536 code units while exceeding 64 KiB on the wire and in `jsonb`. Measure what the name promises: `new TextEncoder().encode(serialized).length`. PR #2095 shipped this on `CUSTOM_FORM_DEFINITION_MAX_BYTES`, and the fix also took the identical pre-existing bug in `CUSTOM_FORM_SUBMISSION_MAX_BYTES` two functions up — a defensible exception to scope discipline, argued in the thread as *"leaving a known identical bug adjacent to the one being fixed seemed worse than the small scope creep."* Name the constant for the unit you actually enforce, and grep `constants.ts` for its siblings.
-
-## A bound you tighten has to accept the rows already stored
-
-A cap added or lowered in `schemas.ts` applies to every write from then on, including the re-save of a row that predates it. PR #2168's custom-form builder lowered the heading and description limits below what the service had been accepting, so a form with a 100-character heading loaded into the editor and refused to save — an admin making an unrelated change had to first rewrite participant-facing copy they had not touched.
-
-When you tighten a bound, pick one deliberately: grandfather the stored values (bound the *change*, not the loaded value), or migrate the rows in the same PR. Leaving the new bound on the write path alone turns every existing row over the limit into a record nobody can edit.
-
-## Don't disambiguate on a column the write path leaves empty
-
-Choosing a display field to tell two same-named records apart is a data-availability question, not a preference. `profiles.email` looks like the obvious tiebreaker between two reviewers called "A. Smith", but `updateUserProfile` only writes it when the user supplies one, so it is null for most reviewers and the disambiguator is blank exactly when it's needed. `slug` is always populated. PR #1848.
-
-Before you select a field for display, check the write paths that populate it: is it required at insert, backfilled, or optional? An optional column is fine as a *secondary* label and wrong as the only thing distinguishing two rows.
-
-## Sorting and filtering in memory is the tell that the query is unfinished
-
-A service that pulls a set and then sorts or filters it in JavaScript has decided the set is small — silently, and usually without saying so. PR #1815 review on `listProposalFeedback`: *"What about pagination here? or do we have an expected upper bound here? Since this is at the service layer, ideally we want to be able to handle it, especially when self-serve comes around … This would be some tech debt and maybe easily resolved. What flags it for me is that we're doing sorting and filtering in memory further down here which always feels a bit like an anti pattern."*
-
-The team's answer on that thread is the policy, and it has two halves — the concession and the obligation:
-
-> *"Imo, the first iteration on most of these **secondary** procedures can start without pagination. For this case, so far we don't see more than 1-2 items. But we should add it for sure."*
-
-So: a secondary read may ship unpaginated, and it must say so — name the expected upper bound in the PR body and file the follow-up. What is not acceptable is in-memory ordering with no statement about cardinality, because the next reader can't tell a deliberate trade-off from an oversight. When the sort or the filter can be expressed in SQL, just express it there; the trade-off never arises.
-
-**The client-side version of the same mistake is worse, because it fights pagination.** PR #1923 filtered proposals in `useProposalFilters` after the page arrived: *"This works to patch what is there now, but it seems like we're actually patching something that is a really bad approach since it's doing the filter client side. This should definitely be happening on the back end, that way we can take into account pagination and reduce overfetching … Maybe we actually need to just attack the real problem which is that it needs to happen at the API level."* A filter applied after paging filters the page, not the result set — so the count is wrong, the empty state is wrong, and the next page re-runs the lie. Push the predicate into the endpoint's input schema and the service's `where`.
-
-## An opt-in flag for a cost is fine — name the callers that would otherwise pay it
-
-The reflex review on a boolean parameter is *"Would it make sense to just remove this flag and include it in all cases?"* (#1721, on `includeMemberCount` in `getRoles`), and the general rule below is *don't add a flag parameter*. The distinction is whether the flag selects **behaviour** or opts into **cost**. A flag that gates an expensive projection — a correlated `COUNT` subquery, an extra join, a document fetch — is the cheaper answer, and the way to close the thread is to enumerate who pays:
-
-> *"We can remove this flag, but the following components would then pay the counting costs (a correlated COUNT subquery per role row) for a value they never read: `ShareProposalModal`, `ProfileUsersAccess`, `RolesSection`, `organization.getRoles` (which doesn't even pass a `profileId`, so a member count would be meaningless there). Only `ProfileInviteModal` reads `memberCount` today."*
-
-Name the call sites and the cost, not the principle. If the list is short and the cost is small, the reviewer is right and the flag should go; if it isn't, the enumeration is the argument. A flag that changes *which rows* come back is still two operations — split it.
-
-## Reconsider an unpaginated read when its audience or its refetch trigger changes
-
-"Unpaginated is fine here" is a judgement about a specific caller, and it expires when the caller changes. PR #1848: `getDecisionReviewAssignments` was a platform-admin-only read where returning everything was a fair trade; the same query then came to back an instance-admin tab that **refetches on every `reviewAssignments` broadcast**, at 50–70 assignments per reviewer, each row carrying a title, categories and an author. Same query, different order of magnitude, and the realtime wiring turns one expensive read into one per event.
-
-Two moves, in order:
-
-- **Split the query by consumer.** In that case only the assign dialog needed the full proposal pool; the rollup the tab renders did not. One query serving two surfaces with different cardinality is usually two queries.
-- **Then page what's left**, per the cursor rules below.
-
-The trigger to look for in review: a read whose registered channel fires on a common mutation, feeding a surface someone leaves open.
-
-## A record written before the side effect must be reconciled when the side effect fails
-
-An "in progress" or dedup row written *before* an external call is a promise that the call will complete. When the call fails and the row survives, the next attempt sees the open record, early-returns, and the work never happens again — a silent permanent failure rather than a retryable one. PR #1843: the moderation flag row was created, the Checkstep community-report request failed, the rejection was swallowed, and the flag stayed open; every later report on the same content returned that existing flag before reaching the provider, so nothing ever reached the human-review queue and nothing could be retried.
-
-Pick one of three shapes and be explicit about which:
-
-- **Write the record after the side effect succeeds**, when you can tolerate a duplicate call.
-- **Write it inside a transaction the failure rolls back**, when the side effect is transactional or compensatable.
-- **Write it with a state the retry path treats as retryable** (`failed`, an attempt count, a `nextRetryAt`) — and then make sure the early-return branch checks that state rather than mere existence.
-
-What isn't an option is catching the provider error and moving on. See the narrow-catch rule in `code-conventions`: this is the failure mode that rule exists to prevent, one layer up.
-
-## Validate at the cache boundary with the schema the type derives from
-
-A value read back from a cache is untyped input in the same sense as a request body — the process that wrote it may have been an older deploy, and eviction can leave it partial. `cached.data as ExportStatusData` puts a security-sensitive status path one silent shape-drift away from wrong, and the cast is where the drift becomes invisible. PR #1851 fixed it in four coordinated steps, which is the pattern to copy:
-
-1. The Zod schema (`exportStatusRecordSchema`) moves into `@op/common` so both the writer and the reader use one definition.
-2. The type derives from it — `type ExportStatusData = z.infer<typeof exportStatusRecordSchema>` — so the check and the type cannot drift apart.
-3. The read uses `safeParse`, and a record that fails logs and reports a defined outcome (`not_found`) rather than propagating a half-shape.
-4. The tRPC router imports the shared response schema instead of hand-rolling the same eleven fields — the second copy was the same drift risk in a second place.
-
-**And the malformed state is usually reachable, not theoretical.** The same PR's workflow patches the status record by merging over the copy it reads, and writes the patch alone when that read misses — so one evicted key leaves a record holding a status and nothing else. Any read-modify-write against an evictable store has this shape: treat a cache miss in the middle of an update as "cannot patch," not as "patch an empty object."
-
-## A generated spreadsheet escapes formula prefixes
-
-A CSV cell whose value begins with `=`, `+`, `-`, `@` (or a leading tab / carriage return) is executed as a formula when the file is opened in Excel, Sheets or Numbers — so any user-controlled string that reaches an export is code running on an administrator's machine. Quoting does not help; the quotes are stripped before evaluation. PR #1852 flagged this on custom-field values flowing through `formatCustomFieldValue` into the proposal export, and **as of `dev` there is still no sanitisation there** — so if you touch `packages/common/src/services/decision/exports/`, this is live, not historical.
-
-Prefix any cell that starts with one of those characters with a single quote (or a leading `'`/tab per your reader's convention) at the point where the cell string is built, not at each call site. The same rule covers any user-authored field an export carries: title, headline, category label, free-text answers.
-
-## A bulk read consumes every page, and says so when it can't
-
-Calling a paginated `listX` once and treating the result as the whole set is a silent-truncation bug, and it's the one that hurts most in exports, backfills and emails — the caller receives a complete-looking artifact. PR #1824: a single `listProposals` call discarded the endpoint's `hasMore`, so "Export all" omitted every proposal past the first page. Loop on the cursor until the read says there is no more, or ask for a service that streams.
-
-Two corollaries:
-
-- **A detected-incompleteness branch has to surface through the flag the UI renders**, not only through a log line. PR #1803: the mismatch branch logged and then returned `truncated: false`, and since the warning banner keys off `truncated`, the admin got a short, well-formed CSV with nothing to indicate it was short. A warning nobody can see is the same as no warning.
-- **Name the cap where the cap is applied.** A hard `limit` in a bulk path (`limit: 1000`) is only safe while something upstream bounds the set; the moment a filter is removed the ceiling becomes reachable. If you can't remove the cap, return the fact that you hit it.
-
-## Don't let an "impossible" branch skip silently
-
-A guard for a case the caller supposedly makes unreachable still needs a `logger.warn` when it fires — otherwise the branch reproduces exactly the bug it was written to prevent, and leaves no trace to diagnose it. Split the genuinely-expected case from the shouldn't-happen case so they're distinguishable in the logs. PR #1677: `reconcileCategoryRename` returned early on a missing new taxonomy term with no log line, so "the result is exactly the orphaning bug this PR fixes: `instanceData` now holds the new label but all existing proposal links still target the old term. At minimum the missing-new-term case should emit a warning so the condition is diagnosable in production." An absent *old* term, by contrast, is normal (nothing was ever tagged) and needs no log.
-
-See the `code-conventions` skill for level selection — an expected-but-recoverable absence is `warn`, not `error`.
-
-## Resolving "the newest one" — filter to rows whose parent still exists
-
-A resolver that picks a single row by recency (`the latest assignment`, `the most recent draft`) assumes every candidate is still resolvable. When those rows reference a **configuration** entity that an admin can remove — a phase, a category, a template — the newest row can point at something that no longer exists, and the resolver hands back a dead reference instead of the perfectly good older row sitting behind it. The caller then fails to resolve the parent's settings and returns a 404 for a resource the user does have access to. PR #1774: "when a reviewer has assignments for the same proposal in multiple phases and the newest assignment belongs to a phase later removed from the instance, this resolver unconditionally selects that assignment … [and] returns a 404 instead of opening another valid assignment for the proposal."
-
-Filter the candidate set to still-valid parents *before* ordering, not after selecting. This is the read-side twin of the `access-control` rule that an authorization path must fail with `UnauthorizedError` rather than propagating a `NotFoundError` from an internal lookup — same root cause (a stale `currentStateId` / removed phase), opposite end of the request.
-
-## Barrel exports widen the public API — re-export by name when only one symbol should be public
-
-`export * from './someFile'` promotes **everything** that file exports, not the one symbol you needed. A side-effecting internal (`ensureProposalTaxonomyTerms`) becoming reachable from `@op/common` is a real API-surface change hiding inside a one-line diff. When a file holds a mix of public and package-internal exports, use a named re-export in `index.ts`:
-
-```ts
-export { categoryTermUri } from './proposalTaxonomy';   // ✅ intentional surface
-export * from './proposalTaxonomy';                     // ❌ also exports the internals
-```
-
-PR #1676 review. Related, from PR #1680: when you *do* promote a helper whose correct use depends on a caller contract the types can't express (e.g. "callers must intersect this with the eligibility set first"), say so in its JSDoc — a publicly-exported footgun is worse than a private one.
-
-## Parallel work
-
-Use `Promise.all` for independent fetches that the function needs to combine:
-
-```ts
-const [existing, { collectionIds }] = await Promise.all([
-  db.query.resources.findFirst({ where: { id }, with: { attachment: true } }),
-  getScopesForResource(id),
-]);
-```
-
-Don't `await` sequentially when calls are independent. Reviewers will flag this. PR #1320: "Looks like it can all be run in `Promise.all`?" / "Better move into `submitUserFlag` so that we can run in a `Promise.all`."
-
-**Respect each external provider's own per-request limits — don't `Promise.all` the whole list.** When a third-party API caps items per request, split into chunks under that provider's cap and process them with bounded concurrency via `pMap` (it preserves input order, so results reassemble 1:1 by index). Express both the cap and the concurrency as named constants in `constants.ts` documenting the provider — never inline magic numbers. Each provider is independent: OpenL caps texts per request (`OPENL_MAX_TEXTS_PER_REQUEST`, PR #1523); DeepL rejects any request carrying more than 50 text params, so translate one text per request under a bounded `DEEPL_REQUEST_CONCURRENCY` (PR #1533) — don't reuse a batching strategy that happened to work for a different provider.
-
-## Don't re-fetch what the caller already has
-
-When the caller (router, parent service, or `<feature>Auth.ts` assertion) has already fetched the row you need, **take it as a parameter** instead of querying again. PR #1320 review: "We fetched this already upstream."
-
-```ts
-// ❌ The router asserted `parentProfileId`. The service refetches it.
-export const flagItem = async ({ user, itemId }) => {
-  const item = await assertModerationItemAccess({ user, itemId });
-  const profile = await db.query.profiles.findFirst({ where: { id: item.parentProfileId } });
-  // ...
-};
-
-// ✅ The assert returned what's needed. Use it.
-export const flagItem = async ({ user, itemId }) => {
-  const { item, parentProfile } = await assertModerationItemAccess({ user, itemId });
-  // parentProfile already loaded for the auth check; no second query.
-};
-```
-
-This is why `<feature>Auth.ts` assertions return resolved context (see the `<feature>Auth.ts` pattern above) — so the service doesn't re-query. If you find yourself fetching the same row in both the assert and the operation, fold the assert to return it.
-
-**Short-circuit an always-empty query.** When a scope resolver can determine the result set will be empty before the main query runs (e.g. a phase that hasn't been reached, an unresolved parent), have the helper return an `isEmpty: true` flag and short-circuit — skip issuing the main query entirely instead of running one guaranteed to return nothing. PR #1437.
-
-## Query style — prefer RBQ v2 (`db.query`) over `db.select`
-
-For reads, default to `db.query.<table>.findFirst / findMany` with object-form filters and explicit column projection — every service file under `@op/common` should follow this:
-
-```ts
-const rows = await db.query.decisionBoundaries.findMany({
-  where: { profileId, taxonomyTermId: { isNotNull: true } },
-  columns: { name: true },
-});
-```
-
-The rules in short — the `drizzle-migrations` skill has the full version with reference sites:
-
-1. **Object-literal filters, not imported operator functions.** Express `eq` / `isNotNull` / `isNull` / `ilike` / `inArray` / range predicates inline (`notifiedAt: { isNotNull: true }`, `acceptedOn: { isNull: true }`, `email: { ilike: pattern }`, `role: { inArray: [...] }`). Don't import `eq` / `isNotNull` / `ilike` from `drizzle-orm` to use inside a `where`. See `listUserInvites.ts:25-28` and `listProfileUserInvites.ts:30` for the pattern.
-2. **Fall back to `db.select().from().where()`** only when RBQ genuinely can't express the query — PostGIS / raw `sql` predicates, literal projections (`` sql`1` `` existence probes, `count(*)`, window functions), or CTEs / custom joins. When you fall back, leave a one-line comment explaining *why*. Canonical fallback: `resolveBoundary.ts:27-40` (`ST_Contains`).
-3. **Row types come from `typeof <table>.$inferSelect`**, not `InferModel<typeof <table>>`.
-4. **Project columns explicitly with `columns: { foo: true }`** when only one or two fields are needed, instead of pulling the whole row and discarding most of it.
-
-Writes (`db.insert` / `db.update` / `db.delete`) stay imperative — RBQ v2 doesn't replace them, and transactions wrapping several statements continue to use those operators on the `tx` handle.
-
-**Push membership into a subquery — don't materialize an ID set in JS.** When a filter scopes rows to a set (phase / snapshot membership), fold it into an inline `inArray(t.id, db.select({ id: other.fkId }).from(other).where(...))` subquery against an indexed column rather than an extra round-trip that builds a JS array and splats it into `WHERE id IN ($7...$506)`. Extract the predicate into a shared builder and flow the same predicate into the parallel `count(*)` query so neither side re-materializes the set. PR #1437 review. For a pure *existence* filter (does a related row exist?), prefer a correlated `EXISTS` subquery over `inArray` — it short-circuits per row and never bounces IDs through JS as bound params. PR #1551: the category filter is "pushed down as a SQL `EXISTS` subquery instead of bouncing every category proposal ID through JS as bound params."
-
-**But a join is the wrong shape when a per-row privacy flag has to be evaluated.** Flattening a one-to-many into one row per child hands you duplicates you then have to collapse by hand — and the collapse is where the check gets skipped. PR #1856 answered *"Is it possible to join the proposal table here to avoid the extra query below?"* with the reason the two queries exist: *"authors can be anonymous. The nested query hands us the accounts behind the author's profile so we can check that flag; a join flattens them into one duplicate row per account, which we'd have to collapse by hand before the check can run. That's exactly how `listProposalRelationships` — which is written as a join — ended up exposing anonymous submitters' names and avatars. Saving one round-trip on a section that only renders when a proposal has merges isn't worth taking on that."* One round-trip is a fair price for a check that stays legible; say that in the thread rather than optimising it away. See the redaction rule in `access-control`.
-
-**Page the base-table ids first, then hydrate relations for that page.** For a `listX` that eager-loads relations via `LEFT JOIN LATERAL json_agg`, the laterals are evaluated across the *whole* table before the `limit` prunes — so returning one page of 10 can scan tens of thousands of rows. Do it in two steps: (1) page the bare base-table ids (`order` / `cursor` / `limit` over the existing index), then (2) hydrate relations only for that page with `where id in (pageIds)`, and **re-apply the paged order afterward** since `in` doesn't preserve it. This is the pattern `listPosts` already uses. PR #1516 (`perf(organization)`): eager laterals "evaluated across the whole organizations table before the limit could prune, so returning a single page of 10 scanned ~20,000 rows."
-
-## Cursor pagination — tie-breaker on id, null-safe `cursorValue`
-
-`listX` operations that page over `createdAt` / `updatedAt` / `score` need two rules to be correct under concurrent inserts and falsy-but-valid sort values. PR #1304 (`listProposals` / `listAllProposals` infinite scroll) failed both before review.
-
-### Always add an id tie-breaker to order + cursor
-
-Two rows that share a `createdAt` (same millisecond — yes, this happens) sort un-deterministically when the only `orderBy` is `createdAt`. The cursor for "last row of page N" then matches the next page's start row inclusively/exclusively at random and **skips rows**. Tie-break with the primary key:
-
-```ts
-const orderBy = [
-  desc(proposals.createdAt),
-  desc(proposals.id),  // tie-breaker — no row is "equal to" another
-];
-
-// Cursor: (createdAt, id) pair. The where becomes a lexicographic compare:
-//   createdAt < cursor.createdAt OR (createdAt = cursor.createdAt AND id < cursor.id)
-```
-
-PR #1304: "paging on `createdAt` / `updatedAt` alone skips rows that share a boundary timestamp, which matters now that this endpoint drives results-phase infinite scroll." Mirror this in every new `listX` that supports infinite scroll. Covered by the regression test "does not skip rows that share a boundary timestamp."
-
-### Gate the cursor on `cursorValue != null`, not on truthiness
-
-When deriving the next cursor from the last item of a page, gate on `!= null` — not on a truthy check — because a falsy-but-valid value (a rubric score of `0`, a vote count of `0`, an empty string) is a perfectly fine sort key:
-
-```ts
-// ❌ Breaks when sorting on rubric score and the last item's score is 0.
-const nextCursor = hasMore && lastItem && cursorValue ? { ... } : null;
-
-// ✅ Falsy values stay paginable.
-const nextCursor = hasMore && lastItem && cursorValue != null ? { ... } : null;
-```
-
-PR #1304 review (nourmalaeb): "If we sort on rubric scores or something where `cursorValue` can be falsy (e.g the rubric score is `0`) this breaks." Both `listProposals` and `listAllProposals` were hardened to `cursorValue != null` in the same PR.
-
-The same rule extends to any "is there a next page" check: gate on `lastItem` (not undefined) and on `cursorValue != null` (not truthy), separately.
-
-## Auxiliary files — what goes where
-
-| File | Contents | Examples |
-|---|---|---|
-| `schemas.ts` | Zod schemas (built with `createSelectSchema(<table>)` from drizzle-zod where possible) + their `z.infer` DTO types. Imported from `@op/common/client` by routers. | `resourceSchema`, `ResourceDTO`, `attachmentSummarySchema` |
-| `constants.ts` | Limits, allowlists, magic strings shared across operations. Comments explain the reason (mirror to client, security caveat, etc.). | `RESOURCE_TITLE_MAX_LEN`, `ALLOWED_RESOURCE_MIME_TYPES`, `STORAGE_BUCKET` |
-| `utils.ts` | Pure helpers (no I/O). Build-DTO, normalize, sort. | `buildCollectionForProfile`, `getNormalizedRoles` |
-| `<feature>Auth.ts` | Domain-specific assertion utilities that wrap `assertProfileAccess` / `assertOrgAccess` with feature-aware lookups and **return useful context** (resolved ids, parent profile, etc.) so callers don't re-fetch. | `assertCollectionAccess`, `assertResourceAccess` |
-| `channelScope.ts` (or `*Context.ts`) | Helpers that resolve realtime fan-out targets — "which profiles' channels need to invalidate when X changes?" | `getProfileIdsForCollection`, `getScopesForResource` |
-| `ordering.ts` | Sort-key / fractional-index utilities + lock helpers for ordered lists. | `appendCollectionToProfile`, `lockProfile`, `lockCollection` |
-| `<feature>DTO.ts` | (Optional, when DTOs are large) Decoder functions converting raw DB rows to wire DTOs. | `resourceDTO` |
-| `storage.ts` | Object-storage operations (Supabase storage, S3, etc.). | `deleteResourceObject` |
-
-When a new helper doesn't fit any of these, **prefer adding it to `utils.ts` or extracting a new named file**. Don't put it in the operation file.
-
-**One helper does not earn its own file — check `utils/` first.** The one-file-per-*operation* rule does not extend to helpers, and reviewers push back both ways in the same window: *"Maybe this and `proposalAuthor.ts` don't deserve their own file."* (#1856), and *"We have these files (which could be renamed and/or merged) that hold utils for working with phases. maybe this can go there — `utils/phaseSettings.ts`, `utils/phaseOrder.ts`."* (#1961). Before adding `utils/<thing>.ts`, list the directory; a domain that already has two util modules does not want a third.
-
-**And ask whether the helper should exist.** The #1961 thread closed with the author's own answer — *"OR.. I just kill this util entirely.. it seems pretty unnecessary given what it does"* — and the resolution was to sort in place and reuse an existing current-phase util. A wrapper that adds a name to one expression is a file, an export, a barrel entry and a test that all have to be maintained; deleting it is a legitimate outcome of "where should this live?"
-
-**Custom JSONSchema keywords are two-sided — register or break.** When you add an `x-<name>` keyword to a custom-form definition schema (`customForm.ts`), you MUST also register it on the AJV instance in `schemaValidator.ts` (`this.ajv.addKeyword('x-<name>')`, alongside `x-field-order` / `x-format` / `x-map-default`). AJV rejects any unregistered custom keyword, so a schema-only change makes validation fail at runtime. PR #1532 added `x-phase` on both sides for exactly this reason.
-
-### The `<feature>Auth.ts` pattern
-
-Domain auth helpers wrap the lower-level `assertProfileAccess` / `assertOrgAccess` and add feature-specific lookup logic. They return the resolved context so the caller doesn't re-query:
-
-```ts
-export const assertCollectionAccess = async ({
-  user, collectionId, policies,
-}: {
-  user: { id: string };
-  collectionId: string;
-  policies: ProfileTypePolicies;
-}): Promise<{ parentProfileIds: string[]; parentProfileId: string }> => {
-  // Resolve the collection's parents...
-  const parentProfileIds = await getProfileIdsForCollection(collectionId);
-  if (parentProfileIds.length === 0) {
-    throw new NotFoundError('Collection', collectionId);
-  }
-  // ...then delegate the policy check to the base assert.
-  const parentProfileId = await assertAnyParentProfileAccess({ user, parentProfileIds, policies });
-  return { parentProfileIds, parentProfileId };
-};
-```
-
-The pattern lets callers do:
+- Use a named-params object and an explicit return type, and throw Common errors only (see code-conventions).
+- Assert access before any DB write. A public read takes `user?: AccessUser` and folds via access-control.
+- Use `db.transaction` only when two or more rows must stay consistent.
+- Don't take a flag that changes which rows come back. Split the op instead. A flag that opts into a cost (a correlated COUNT, an extra join) is fine if you can name the callers that would otherwise pay for it.
+- Store only the id when the id is all you need.
+
+## `<feature>Auth.ts`
+
+Wrap `assertProfileAccess` / `assertProfileTypeAccess` with the feature's lookup and return the resolved context, so the op doesn't fetch again:
 
 ```ts
 const { parentProfileId } = await assertCollectionAccess({ user, collectionId, policies });
-// parentProfileId reused for `addedBy`, channel fan-out, etc. — no extra fetch
 ```
 
-This is the "reviewers consistently flag inline fetch-then-check" pattern from PR #1229 in concrete form. **Don't inline fetch + assert** in the operation file.
+- Don't inline fetch-then-check in an op file. Fold it into an assert that returns the row.
+- Don't re-fetch a row the caller or the assert already loaded. Take it as a parameter.
+- A read and its write sibling assert the same preconditions through the same helper. If one bad input yields two different error types, one of them is missing an assert.
 
-## Naming the operation function
+## Concurrency
 
-Use the standard verb prefixes — they're load-bearing for code review:
+- Take locks in sorted id order so they can't deadlock.
+- A lock protects nothing you read before the transaction. Re-read the guard's inputs inside it.
+- A lock only serializes writers that take the same lock. Name the concurrent writer and match what it locks: a plain `UPDATE` takes a row lock, so use `SELECT … FOR UPDATE` rather than an advisory lock.
+- A `lockX` that returns "no row" is reporting a concurrent delete. Surface it (404) instead of discarding it.
+- Re-assert every gate (phase, state, claim) in the writing statement's `WHERE`. Treat zero rows updated as a concurrent failure, with its own error message distinct from the JS-check message.
+- For inserts, the unique index has to cover every column the JS check covers (see drizzle-migrations). A relationship invariant (no cycles, no chains, one edge per pair) needs an advisory lock over the sorted id pair.
+- A dedup or in-progress row written before an external call must be either written after success, rolled back by the transaction, or marked retryable and checked by the early return. Never catch and move on.
 
-| Prefix | Means | Examples |
-|---|---|---|
-| `create*` | Creates a new row / aggregate | `createCollection`, `createPost` |
-| `get*` | Returns one record (or null) | `getCollection`, `getProposalById` |
-| `list*` | Returns a paginated/multi-record query | `listCollections`, `listProposals` |
-| `update*` | Updates a row | `updateCollection`, `updateProposal` |
-| `delete*` | Deletes a row | `deleteCollection`, `deleteResource` |
-| `attach*` / `detach*` | Adds/removes a join-table row | `attachResourceToCollection` |
-| `reorder*` | Moves an ordered item | `reorderCollection`, `reorderResource` |
-| `resolve*` | Disambiguates or computes | `resolveOrCreateDefaultCollection`, `resolveTargetCollection` |
-| `assemble*` / `build*` | Composes a DTO from parts | `assembleProposalData`, `buildCollectionForProfile` |
-| `assert*` | Throws on failure (in `<feature>Auth.ts`) | `assertCollectionAccess` |
+## Validation and bounds
 
-A function called `proposalsForPhase()` reads as ambiguous. The same logic named `getProposalsForPhase()` reads as "pure, returns a value." Reviewers will rename.
+- A `*_MAX_BYTES` cap is measured with `new TextEncoder().encode(s).length`, never `String.length`.
+- A bound you tighten must still accept stored rows. Grandfather the change, or migrate the rows in the same PR.
+- Treat a value read from a cache as untrusted input. `safeParse` it against the shared Zod schema the type derives from (`z.infer`), not with `as`. A cache miss in the middle of a read-modify-write means "cannot patch".
+- Custom-form `x-<name>` keywords must also be registered via `ajv.addKeyword` in `schemaValidator.ts`.
+- Don't disambiguate two records on a column their write path leaves optional (e.g. `profiles.email`). Use one that's always populated (`slug`).
 
-## Channel registration lives in the router, not the service
+## Reads and pagination
 
-The service operation **does the work**. The router **decides which channels to fan invalidations on**. This keeps services testable without a tRPC context, and lets the same service back multiple endpoints with different channel posture.
+- Sorting or filtering in JS means the query isn't finished. Push the predicate into SQL and the endpoint input. Never filter client-side after paging.
+- A secondary read may ship unpaginated, but the PR has to state the expected upper bound and file a follow-up. Re-evaluate it when its audience or realtime refetch trigger changes, and split the query per consumer before paging.
+- Paginated services return `Paginated<T>` (`{ items, next }`) from `@op/common` (ADR-0003).
+- The cursor carries an id tie-breaker: `orderBy [desc(createdAt), desc(id)]`, compared lexicographically.
+- Gate the next cursor on `cursorValue != null`, not truthiness (a score of 0 is valid).
+- A bulk read (export, backfill, digest) loops until `next` is null. When it detects truncation, surface it through the flag the UI renders, not a log line. Name any hard `limit` cap where it's applied.
+- When resolving "the newest" row, filter to candidates whose config parent (phase, category, template) still exists before ordering.
+- Run independent reads with `Promise.all`. For a provider with per-request caps, chunk under the cap and use `pMap` with a named concurrency constant in `constants.ts`.
+- When a scope resolver knows the result is empty, return `isEmpty` and skip the main query.
+- Use a join only when no per-row privacy flag needs evaluating. Anonymous-author checks need the nested query (see access-control redaction).
+- Share one visibility/moderation predicate builder across sibling reads. Fold a new arm into it, not beside it.
+- Query syntax (`db.query`, `{ in }`, fallbacks, page-then-hydrate) is owned by [drizzle-migrations](../drizzle-migrations/SKILL.md).
 
-When a mutation affects many profiles (e.g. a resource attached to a shared collection), the service exports a `channelScope` helper that returns the fan-out targets, and the router maps that into `ctx.registerMutationChannels([...])`. See the `realtime-channels` skill for the channel side.
+## Side outputs
 
-## Don't
+- Generated CSV/spreadsheet cells that start with `= + - @`, tab or CR must be escaped where the cell string is built (e.g. `csv-stringify`'s `escape_formulas`). This covers titles, categories, custom-field values and free text.
+- An "impossible" branch logs `logger.warn` when it fires. Keep it separate from the expected-absence case.
+- Changing a content-key or cache-key format busts the cache. Say in the PR which entries re-derive.
 
-**Changing a content-key / cache-key format is a silent cache bust.** Any value keyed by a derived content-key (memoized translations, computed-DTO caches, hash-addressed rows) is orphaned the moment you change how that key is built — old entries no longer match, so the next access recomputes from scratch. When a PR alters a key format, spell out in the description exactly which entries re-derive and which are untouched. PR #1540 (self-review): the change altered the content-key format for array fields only, so array translations (e.g. category) re-translate once after deploy while scalar keys are unchanged. Scope it tightly and say so — reviewers can't see the blast radius from the diff alone.
+## Channels
 
-- **Don't add I/O to `utils.ts`** — utils are pure. Side-effect helpers belong in `<feature>Auth.ts`, `channelScope.ts`, or their own file.
-- **Don't expose `db` from a service file** — the service operates on `db`; consumers call the operation. A router never calls `db` directly.
-- **Don't inline auth-check + fetch logic** when a `<feature>Auth.ts` would consolidate the pattern. The third inline copy is a merge-blocker.
-- **Don't add a flag parameter** to an operation when the use cases are genuinely different. Split into two operations. PR #1084 review: "I like the composable approach more here because the choice is pretty specific to the use-case... not a big fan of the flags approach generally."
-- **Don't store more than the id** when you only need the id. A draft cache that stores the entire proposal will drift; one that stores the id stays correct.
-- **Don't open-code the lock**. Use the feature's `lockX` helper from `ordering.ts`.
-- **Don't re-implement the visibility filter per read endpoint.** When two reads (e.g. a paginated `listX` and a map/aggregate endpoint) must apply the same access / phase / visibility / moderation filtering, extract the WHERE-clause filter builder into one shared helper both call. If each endpoint hand-rolls its own predicate, what a viewer may see drifts between them and one surface leaks rows the other hides. PR #1553 review: the whole access/phase/visibility/moderation filter builder was lifted out of `listProposals` into a shared helper that both the paginated list and the new map endpoint call. The follow-on discipline is to fold a *newly discovered* arm into that shared predicate rather than beside it — PR #1848 patched a real moderation hole in `getProposalsForPhase` by inlining the filter a third time, immediately below the `phaseEligiblePredicate` that already owns supersession: *"Real hole, right fix. But this is now the third inline copy … Folding it in there makes the next branch impossible to forget."* A correct fix in the wrong place is how the fourth copy gets written.
+The service does the work, and the router registers channels. A mutation that fans out exports a `channelScope.ts` resolver, and the router snapshots scopes before the write. Wiring rules are in [realtime-channels](../realtime-channels/SKILL.md).
+
+See [references/lessons.md](references/lessons.md) for the PR history behind these rules.
+
+## Review checklist
+
+- [ ] One op per file, named export matching filename, named params, explicit return type
+- [ ] Access asserted before any write; fetch+check lives in `<feature>Auth.ts` and returns context
+- [ ] No re-fetch of rows the caller/assert already has
+- [ ] Multi-row writes in a transaction; locks via `lockX`, sorted, matching the concurrent writer
+- [ ] Guard inputs re-read inside the transaction; gates re-asserted in the write's `WHERE`
+- [ ] Zero-rows / lock-miss paths surfaced with their own error
+- [ ] Byte caps use `TextEncoder`; tightened bounds accept stored rows
+- [ ] Cache reads `safeParse`d against the shared schema
+- [ ] No in-memory sort/filter of a paged set; unpaginated reads state their bound
+- [ ] Cursor has id tie-breaker and `!= null` gate; bulk reads consume every page
+- [ ] CSV output escapes formula prefixes
+- [ ] `utils.ts` pure; barrel re-exports by name when the file has internals
+- [ ] Query syntax per drizzle-migrations; channels per realtime-channels
