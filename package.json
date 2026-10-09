@@ -1,0 +1,19 @@
+{
+  "name": "common-agent-toolkit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "evals": "vitest run --config vitest.evals.config.ts --reporter=vitest-evals/reporter --reporter=json --outputFile.json=.vitest-evals/report.json",
+    "evals:serve": "vitest-evals serve .vitest-evals"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-agent-core": "0.67.68",
+    "@mariozechner/pi-ai": "0.67.68",
+    "@types/node": "24.13.3",
+    "@vitest-evals/harness-pi-ai": "0.16.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "vitest-evals": "0.16.1"
+  }
+}
