@@ -1,80 +1,51 @@
 ---
 name: pickup-task
-description: Find the next available Agent task on the Asana board — filter Backlog + Type=Agent, then return the chosen task gid for the caller to drive. Use when asked to pick up, claim, or grab a task, when invoking /pickup-task, or when starting work without a specific task URL. Does NOT claim, move, branch, or comment — hand the chosen gid off to `implement-task`, which owns all task mutation.
+description: Pick the next Asana task (Backlog + Type=Agent), re-verify it is still in Backlog, and hand TASK_ID to implement-task; no mutation. Use when asked to pick up, grab or claim the next task, for /pickup-task, or when starting without a task URL.
 ---
 
-This skill builds on `asana-api` (auth, base URL, endpoint reference). Read that skill first if you don't already know how to call Asana REST.
+Find one eligible task and hand its gid to `implement-task`. This skill never mutates Asana: no claim, move, comment or branch. Running it twice changes nothing. `implement-task` owns everything after the hand-off.
 
-Scope is intentionally narrow: **find a task and return its gid**. Atomic claim, section moves, branch creation, comments, and PR linkage all live in `implement-task` — that keeps the picker idempotent (running it twice doesn't mutate Asana) and keeps every claim+move under a single owner.
+Endpoints, auth and pagination: `asana-api`.
 
-## Required env
+## Env
 
-- `ASANA_PERSONAL_ACCESS_TOKEN`
-- `ASANA_PROJECT_ID`
-- `ASANA_BACKLOG_SECTION_ID` — section we pull from
+`ASANA_PERSONAL_ACCESS_TOKEN`, `ASANA_PROJECT_ID`, `ASANA_BACKLOG_SECTION_ID`. They come from the user's shell env or `~/.claude/settings.json` `env`. If one is unset, stop and ask the user to set it there. Do not invent gids.
 
-If any are unset, stop and ask the user to fill `.env.local`. Do not invent gids.
+## Eligible means all of
 
-## The eligibility rules
+1. In the Backlog section (`ASANA_BACKLOG_SECTION_ID`).
+2. Custom field `Type` includes `Agent` (multi-enum; also accept a single-enum `Agent`).
+3. Not completed (`completed_since=now`).
 
-A task is eligible only if **all** of:
+Assignee is not a filter. It is carried through for the PR assignee later.
 
-1. It lives in the Backlog section (`ASANA_BACKLOG_SECTION_ID`) of the current sprint.
-2. It has the custom field `Type` with value `Agent` (the field is multi-enum; "Agent" must be one of the selected values).
-3. It is not already completed (`completed_since=now` filters the listing).
+## Step 1 — List
 
-Assignee is **not** part of the filter — any task in Backlog with `Type=Agent` is fair game regardless of who it's assigned to. (We still capture the assignee so `implement-task` can request a PR review from them later.)
-
-## Step 1 — list eligible tasks
-
-**Never write API responses to `/tmp/<fixed-name>`.** That path is shared across sessions and may be sandbox-blocked; a write that silently fails leaves a stale file from a prior run, and the next `jq` step reads stale data and picks a task that has long since moved off the Backlog. Pipe the response straight into `jq`, or use `$TMPDIR` with `mktemp` if you genuinely need a file.
-
-```bash
-# Pipe directly to jq — no intermediate file, no stale-data class of bug.
-ELIGIBLE_JSON=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/sections/$ASANA_BACKLOG_SECTION_ID/tasks?completed_since=now&limit=100&opt_fields=gid,name,notes,assignee.gid,assignee.name,custom_fields.name,custom_fields.multi_enum_values.name,custom_fields.enum_value.name" \
-  | jq '[.data[]
-      | select(any(.custom_fields[]?;
-          .name == "Type"
-          and ((.multi_enum_values // [] | any(.name == "Agent"))
-               or (.enum_value.name == "Agent"))))
-      | {gid, name, assignee}]')
-
-echo "$ELIGIBLE_JSON"
-```
-
-Filter the result locally — keep tasks where some `custom_fields[].name === "Type"` and that field's `multi_enum_values[].name` (or `enum_value.name`) contains `"Agent"`. The assignee field is carried through for downstream use, not filtered on.
-
-If you need verification context (e.g. to decide between candidates), pull the stories for a candidate:
+Pipe straight into `jq`. Never write responses to a fixed `/tmp/<name>`: a silently failed write leaves a stale file from a prior run, and you pick a task that already left Backlog. Use `mktemp` if you need a file.
 
 ```bash
 curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/<task_gid>/stories?opt_fields=text,created_by.name,created_at"
+  "https://app.asana.com/api/1.0/sections/$ASANA_BACKLOG_SECTION_ID/tasks?completed_since=now&limit=100&opt_fields=gid,name,assignee.name,custom_fields.name,custom_fields.multi_enum_values.name,custom_fields.enum_value.name" \
+  | jq '[.data[]
+      | select(any(.custom_fields[]?; .name == "Type"
+          and ((.multi_enum_values // [] | any(.name == "Agent")) or (.enum_value.name == "Agent"))))
+      | {gid, name, assignee}]'
 ```
 
-## Step 2 — pick one, re-verify, and hand off
+To choose between candidates, read their stories (`asana-api`, "Read task comments").
 
-Choose one eligible task. **Before handing off**, re-fetch the task's memberships and confirm it is still in the Backlog section. The Step 1 listing is a snapshot — between listing and handoff the task can be moved (by another agent, by a human, by an automation), and `implement-task` will then claim and move a task that no longer belongs in Backlog.
+## Step 2 — Re-verify, then hand off
+
+The listing is a snapshot. Before handing off, confirm the chosen task is still in Backlog:
 
 ```bash
-TASK_GID="<chosen_task_gid>"
-CURRENT_SECTION=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
+TASK_GID=<chosen gid>
+CURRENT=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
   "https://app.asana.com/api/1.0/tasks/$TASK_GID?opt_fields=memberships.project.gid,memberships.section.gid" \
-  | jq -r --arg proj "$ASANA_PROJECT_ID" \
-      '.data.memberships[] | select(.project.gid == $proj) | .section.gid')
-
-if [ "$CURRENT_SECTION" != "$ASANA_BACKLOG_SECTION_ID" ]; then
-  echo "Task $TASK_GID is no longer in Backlog (now in $CURRENT_SECTION) — skipping."
-  # Drop this candidate, pick another, or stop if none remain.
-fi
+  | jq -r --arg p "$ASANA_PROJECT_ID" '.data.memberships[] | select(.project.gid == $p) | .section.gid')
+[ "$CURRENT" = "$ASANA_BACKLOG_SECTION_ID" ] || echo "Task $TASK_GID left Backlog (now $CURRENT) — skipping."
 ```
 
-Only if the re-verify passes do you output the gid and **hand off to `implement-task`** — pass `TASK_ID=<task_gid>`. That skill owns:
-
-- The atomic UUID claim + move to In-Progress.
-- Retry detection via the local claim cache.
-- Claim-race verification.
-- Branch creation off `dev` (`issue-$TASK_ID`).
-- Everything downstream: reading the task body, BUG MODE / PLAN REVIEW, RGR, gates, PR open, In-Review move, and on-failure Blocked move.
-
-If no eligible tasks remain (or all candidates fail re-verify), report that to the caller and stop. Do not mutate any task here.
+- Still in Backlog → hand off: invoke `implement-task` with `TASK_ID=<gid>`.
+- Moved → drop it and try the next candidate.
+- None left → report that and stop.

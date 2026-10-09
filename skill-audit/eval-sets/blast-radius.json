@@ -1,0 +1,30 @@
+[
+  {
+    "query": "what does this change reach? which files transitively depend on what I changed",
+    "should_trigger": true
+  },
+  {
+    "query": "before I refactor packages/common/src/utils/storage.ts tell me how risky it is to touch",
+    "should_trigger": true
+  },
+  {
+    "query": "how much review does this branch warrant \u2014 run the impact analysis",
+    "should_trigger": true
+  },
+  {
+    "query": "the CI comment shows a blast radius of 87, what does that mean and how is it computed",
+    "should_trigger": true
+  },
+  {
+    "query": "find all the places that call getOrgAccessUser",
+    "should_trigger": false
+  },
+  {
+    "query": "why is the typecheck failing",
+    "should_trigger": false
+  },
+  {
+    "query": "profile the decision page for slow renders",
+    "should_trigger": false
+  }
+]

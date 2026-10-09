@@ -1,81 +1,56 @@
 ---
 name: asana-api
-description: Read or write Asana tasks programmatically via the Asana REST API using $ASANA_PERSONAL_ACCESS_TOKEN and $ASANA_PROJECT_ID from .env.local — our preferred path over the Asana MCP for skill-driven flows. Use when fetching a task's description / custom fields / sections, listing tasks in the project, posting a comment to a task, moving a task between sections, or assigning a task. Not for installing or authenticating the Asana MCP server.
+description: Asana REST via $ASANA_PERSONAL_ACCESS_TOKEN and $ASANA_PROJECT_ID — read a task, stories and custom fields, comment, move sections, parse app.asana.com URLs. Use when a skill or script reads or writes Asana instead of using the Asana MCP.
 ---
 
-## Why REST and not the Asana MCP
+Skill-driven flows (`pickup-task`, the `implement-task` Asana adapter) use REST, not the Asana MCP: the env vars pin the account, project and sections, and there is no MCP auth to set up. The MCP is fine for ad-hoc exploration.
 
-The team flow expects the token (`$ASANA_PERSONAL_ACCESS_TOKEN`) and project ID (`$ASANA_PROJECT_ID`) to come from `.env.local`. That keeps which account, which project, and which sections we hit deterministic across machines — and means no extra MCP install / auth dance to onboard a new agent or developer. The MCP is fine for ad-hoc exploration; for skill-driven flows (pickup, comment, move sections) we stay on REST.
+## Auth
 
-## Auth + project
+- Env: `ASANA_PERSONAL_ACCESS_TOKEN` (personal access token), `ASANA_PROJECT_ID` (team project gid). They come from the user's shell env or `~/.claude/settings.json` `env`, not from a repo `.env.local`. If one is unset, ask the user to set it there. Do not invent a value.
+- Header: `Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN`
+- Base URL: `https://app.asana.com/api/1.0`
+- Request only the fields you need with `opt_fields`. Pipe responses into `jq`; don't write them to fixed `/tmp` paths.
 
-- Token: `$ASANA_PERSONAL_ACCESS_TOKEN` (Personal Access Token). Loaded from `.env.local`.
-- Project: `$ASANA_PROJECT_ID` (gid of the team's task project). Loaded from `.env.local`.
-- Header: `Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN`.
-- Base URL: `https://app.asana.com/api/1.0`.
-- If either env var is empty, ask the user — do not invent a value.
+Below, `A="Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN"`, `API=https://app.asana.com/api/1.0`, and `J="Content-Type: application/json"`.
 
-## List tasks in our project
-
-```bash
-# All open tasks in the project (most useful entry point for agents picking up work)
-curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/projects/$ASANA_PROJECT_ID/tasks?completed_since=now&opt_fields=name,assignee.name,due_on,notes,memberships.section.name"
-```
-
-`completed_since=now` filters out completed tasks. `opt_fields` keeps the payload small — request only the fields you need.
-
-## Read a single task
+## Read
 
 ```bash
-curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/<task_gid>?opt_fields=name,notes,assignee.name,custom_fields,memberships.section.name"
+# Open tasks in the project
+curl -s -H "$A" "$API/projects/$ASANA_PROJECT_ID/tasks?completed_since=now&opt_fields=name,assignee.name,due_on,memberships.section.name"
+# Open tasks in one section
+curl -s -H "$A" "$API/sections/<section_gid>/tasks?completed_since=now&opt_fields=name,custom_fields.name,custom_fields.multi_enum_values.name"
+# One task
+curl -s -H "$A" "$API/tasks/<task_gid>?opt_fields=name,notes,assignee.name,custom_fields,memberships.section.name"
+# Task comments / activity
+curl -s -H "$A" "$API/tasks/<task_gid>/stories?opt_fields=text,created_by.name,created_at"
 ```
 
-## Read task comments / activity
+## Write
 
 ```bash
-curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/<task_gid>/stories?opt_fields=text,created_by.name,created_at"
+# Comment (story)
+curl -s -X POST -H "$A" -H "$J" -d '{"data":{"text":"<text>"}}' "$API/tasks/<task_gid>/stories"
+# Move to a section
+curl -s -X POST -H "$A" -H "$J" -d '{"data":{"task":"<task_gid>"}}' "$API/sections/<section_gid>/addTask"
+# Update (complete, assignee, ...)
+curl -s -X PUT -H "$A" -H "$J" -d '{"data":{"completed":true}}' "$API/tasks/<task_gid>"
+# Create in the project
+curl -s -X POST -H "$A" -H "$J" \
+  -d "{\"data\":{\"name\":\"<title>\",\"notes\":\"<body>\",\"projects\":[\"$ASANA_PROJECT_ID\"]}}" "$API/tasks"
 ```
 
-## Update a task
+Build JSON bodies with `jq -n --arg` when the text has quotes or newlines.
 
-```bash
-# Mark complete, change assignee, etc.
-curl -s -X PUT -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"data":{"completed":true}}' \
-  "https://app.asana.com/api/1.0/tasks/<task_gid>"
-```
+## Task URLs
 
-## Add a comment
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"data":{"text":"Picked up by agent — branch: feat/<slug>"}}' \
-  "https://app.asana.com/api/1.0/tasks/<task_gid>/stories"
-```
-
-## Create a task in our project
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"data\":{\"name\":\"<title>\",\"notes\":\"<body>\",\"projects\":[\"$ASANA_PROJECT_ID\"]}}" \
-  "https://app.asana.com/api/1.0/tasks"
-```
-
-## Parsing a task URL
-
-Asana URLs come in two shapes:
 - `https://app.asana.com/0/<project_gid>/<task_gid>`
 - `https://app.asana.com/1/<workspace>/project/<project>/task/<task_gid>`
 
-Pull the trailing `<task_gid>` and call `GET /tasks/<task_gid>`.
+Take the trailing `<task_gid>` (strip any `/f` or query string) and `GET /tasks/<task_gid>`.
 
-## Pagination + rate limits
+## Pagination and rate limits
 
-- Pagination: `?limit=100&offset=<token>`. The `next_page.offset` field on the response is the next token.
-- Rate-limit: ~150 req/min per token. On 429, back off and retry.
+- `?limit=100`, then pass `offset=<next_page.offset>` from the response until `next_page` is null.
+- About 150 requests/min per token. On 429, wait `Retry-After` seconds and retry.

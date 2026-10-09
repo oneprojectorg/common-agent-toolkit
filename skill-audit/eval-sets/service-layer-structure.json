@@ -1,0 +1,34 @@
+[
+  {
+    "query": "create the service function for archiving a proposal in packages/common/src/services/decision",
+    "should_trigger": true
+  },
+  {
+    "query": "im adding a new feature folder packages/common/src/services/reactions \u2014 how should the files be laid out",
+    "should_trigger": true
+  },
+  {
+    "query": "two users can join the same process at once and we get duplicate memberships, how should the service guard against that race",
+    "should_trigger": true
+  },
+  {
+    "query": "add cursor pagination to listProposals in the common services",
+    "should_trigger": true
+  },
+  {
+    "query": "the listMembers service sorts results in JS after fetching, is that fine?",
+    "should_trigger": true
+  },
+  {
+    "query": "add a button to the decisions page header that opens the settings modal",
+    "should_trigger": false
+  },
+  {
+    "query": "translate the 'Archive' label into spanish",
+    "should_trigger": false
+  },
+  {
+    "query": "how do i start the local supabase stack",
+    "should_trigger": false
+  }
+]

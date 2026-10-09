@@ -1,481 +1,142 @@
 ---
 name: implement-task
-description: Drive an Asana task from picked → ready-for-review — claim it atomically, move it to In-Progress, branch off dev, investigate bugs, plan, run the RGR loop, the gate suite (typecheck / test / e2e / fallow), the CRAP pass (score every changed function, then add tests or split until nothing sits at 30 or worse), `/simplify` + `/review`, then open a draft PR and move the task to In-Review (or Blocked on failure). Use after a task gid has been chosen (e.g. by `pickup-task`) or when asked to implement, work, or drive a task.
+description: Implement one task end-to-end — resolve source (Asana gid/URL, GitHub issue, spec file, prompt), claim, branch off origin/dev, plan, RGR, gates, CRAP, /simplify + review loop, draft PR, hand-off. Use when asked to implement, fix, or work a task or issue, or for /implement-task.
 ---
 
-Drives a single Asana task from picked → ready-for-review. This skill owns **all** mutation of the Asana task: the atomic claim, every section move, every comment we post, the feature branch, and the PR. `pickup-task` only selects which task to work on.
+Drives one task from input to draft PR. Works with a runner (`pickup-task` hands over `TASK_ID=<asana gid>`) or standalone: `/implement-task <asana gid | asana URL | #123 | github issue URL | spec path | free text>`.
 
-Every comment, story, and PR body this skill writes follows the `technical-writing` skill's Simplified Technical English — active voice, one word per meaning, no filler.
+**Ownership.** The main agent owns the source adapter (claim, comments, status), git, and the PR. Subagents explore, run gates, and review. They never edit tracker state, commit, or push.
 
-**Preconditions**: you have a `TASK_ID` (Asana task gid). Branch may or may not exist yet — Step 1 creates it. You do NOT need to have already claimed the task or moved it on the board.
+Every comment, story and PR body follows `technical-writing` (Simplified Technical English).
 
-## Required env
+## Hard rules
 
-- `ASANA_PERSONAL_ACCESS_TOKEN`, `ASANA_PROJECT_ID` — see `asana-api`.
-- `ASANA_IN_PROGRESS_SECTION_ID` — section we move to on claim.
-- `ASANA_IN_REVIEW_SECTION_ID` — section we move to when the PR is opened.
-- `ASANA_BLOCKED_SECTION_ID` — section we move to when something goes wrong mid-task.
+1. Branch from `origin/dev`, never from current HEAD. Never `git checkout dev` (hook-blocked).
+2. `pnpm format:changes` before every `git add`/commit. It formats unstaged changes only, so run it before staging. Bare `pnpm format` is denied in common.
+3. Every PR opens as a draft: `gh pr create --draft --base dev`.
+4. No changed function at CRAP ≥ 30; don't raise the CRAP of a touched function (see Step 6).
+5. Never `pnpm build` or `pnpm w:db migrate`. After a schema change, run `pnpm w:db generate`.
+6. One task per branch. Don't pull adjacent fixes into the diff (`branch-and-pr` owns scope discipline).
 
-If any are unset, stop and ask the user to fill `.env.local`. Do not invent gids.
+## Step 0 — Resolve the source
 
-## Hard rules (read first)
+| Input | Adapter |
+|---|---|
+| `TASK_ID`, a bare numeric Asana gid, `asana:<gid>`, or an `app.asana.com` URL | [references/adapter-asana.md](references/adapter-asana.md) |
+| `#<n>`, `gh:<n>`, or a `github.com/.../issues/<n>` URL | [references/adapter-github.md](references/adapter-github.md) |
+| A spec file path (`spec:<path>` or an existing file) or free text | [references/adapter-local.md](references/adapter-local.md) |
 
-These apply to every run of this skill. No exceptions, no "the diff is tiny" carve-outs:
+Read the adapter. It defines **fetch**, **claim**, **branch name**, **comment**, **transitions** (`in_progress`, `in_review`, `blocked`) and **hand-off**. The rest of this skill calls only those. "Comment" or "transition" below means "do what the adapter says". The local adapter makes both no-ops.
 
-1. **ALWAYS run `pnpm format` before every commit.** Every commit, including the plan commit, the first RGR commit, and any fixup commits. Details in Step 7.
-2. **Every PR opens in draft mode** (`gh pr create --draft --base dev`). Agents never open straight to "ready for review" — the author marks it ready when they're satisfied. Details in Step 8.
-3. **Every PR has an assignee set** — the GitHub user mapped from the Asana task's assignee (`scazan` / `valentin0h` / `nourmalaeb`). If the assignee doesn't map, skip the assignment rather than guessing. Details in Step 8.
-4. **Score the diff with CRAP and iterate on it** before `/simplify` + `/review`. Every changed function at 30 or worse gets a test, a split, or a one-line reason. The numbers drive your loop; they do not go in the PR body — CI posts its own. Details in Step 7.
+Fetch produces a brief: title, body, verification / acceptance steps, assignee hint, source URL. Keep the verification steps; Step 6 executes them.
 
 ## Step 1 — Claim and branch
 
-Claim the task atomically, move it to In-Progress, then create the feature branch. The claim is a UUID we both write into the task (as a story) and persist locally so we can recognize the task on a later retry.
-
-### Local claim cache
-
-We persist every UUID we generate to `~/.cache/claude-pickup/<task_gid>` (per-machine). This lets us answer one question on a later iteration: *did this machine already claim this task before?* Useful when a task we previously worked on was moved back to Backlog (often with a new comment containing extra info — clarification, re-prioritization, test feedback) and we want to pick it up again rather than walking past it as "already claimed by someone".
-
-### Before claiming, check for prior claims
-
-The block below answers "should I claim this task or stop?" by inspecting the most recent `agent-claim:` story. Read its `echo` output as your decision signal:
-
-- "Retry detected: …" — re-read comments since the prior claim for new context, then run the **claim + move** block to stamp a fresh UUID.
-- "already claimed by another agent" — stop. The caller should pick a different task (via `pickup-task`) or abort.
-- No output from the `if` block — no prior claim exists; run the **claim + move** block.
-
-```bash
-TASK_GID="$TASK_ID"
-CACHE_DIR="$HOME/.cache/claude-pickup"
-mkdir -p "$CACHE_DIR"
-PRIOR_CLAIM_FILE="$CACHE_DIR/$TASK_GID"
-
-# What's the last claim story on the task (if any)?
-LAST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_at" \
-  | jq -r '.data | map(select(.text | startswith("agent-claim:"))) | sort_by(.created_at) | last | .text // empty')
-
-if [ -n "$LAST_CLAIM" ]; then
-  PRIOR_UUID="${LAST_CLAIM#agent-claim:}"
-  if [ -f "$PRIOR_CLAIM_FILE" ] && [ "$(cat "$PRIOR_CLAIM_FILE")" = "$PRIOR_UUID" ]; then
-    echo "Retry detected: this machine previously claimed $TASK_GID."
-    # The task was moved back to Backlog after our last attempt — likely
-    # with new context. Read the comments since the last claim story for
-    # the new info, then re-claim with a fresh UUID below.
-  else
-    echo "Task $TASK_GID is already claimed by another agent ($PRIOR_UUID)."
-  fi
-fi
-```
-
-### Claim + move
-
-```bash
-# Generate a new UUID and persist it before stamping.
-AGENT_ID=$(uuidgen)
-echo "$AGENT_ID" > "$PRIOR_CLAIM_FILE"
-
-# Stamp the claim by appending a comment (story). Comments are append-only,
-# so two parallel agents can't overwrite each other's claim — but the LAST
-# claim story wins, which is why the verify below is required.
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"data\":{\"text\":\"agent-claim:$AGENT_ID\"}}" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories"
-
-# Move to In-Progress
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
-  "https://app.asana.com/api/1.0/sections/$ASANA_IN_PROGRESS_SECTION_ID/addTask"
-```
-
-On a retry, the user has likely added a comment with new info. Read all stories newer than the prior claim and treat them as additional task context before planning:
-
-```bash
-# Comments since our previous claim
-curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_by.name,created_at" \
-  | jq --arg prior "$PRIOR_UUID" \
-      '.data | map(select(.text | startswith("agent-claim:") | not)) | .[]'
-```
-
-### Verify the claim still holds
-
-Re-read the most recent claim story on the task. If it isn't ours, another agent grabbed it between our claim and our move.
-
-```bash
-LATEST_CLAIM=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories?opt_fields=text,created_at" \
-  | jq -r '.data | map(select(.text | startswith("agent-claim:"))) | sort_by(.created_at) | last | .text')
-
-if [ "$LATEST_CLAIM" != "agent-claim:$AGENT_ID" ]; then
-  echo "Lost claim race for $TASK_GID — backing off."
-fi
-```
-
-If the echo prints "Lost claim race", another agent grabbed the task between our claim and our verify. Do **not** roll back the section move (the winning agent now owns the task); stop and report to the caller. Do not proceed to branch / read / RGR.
-
-### Branch
-
-Create the feature branch off `dev` named `issue-$TASK_GID` — the literal `issue-` prefix followed by the Asana task gid you claimed. Every agent picking up the same task derives the same branch name, which is what lets parallel pickups across machines coordinate (and what lets a human glance at a branch and find the task).
-
-Base the branch **explicitly on `origin/dev`**. Never `git checkout dev` (the protected-branch hook blocks switching HEAD onto dev) and never run a bare `git checkout -b` from the current HEAD — after a previous task, HEAD is still that task's branch, and branching from it silently stacks this task on top of the last one:
+1. Run the adapter's **claim**. If it says stop (claimed by another agent, lost race, closed issue), stop and report.
+2. Branch name: `issue-<gid>` (Asana), `issue-gh-<n>` (GitHub), `<type>/<slug>` otherwise.
+3. Create it on the dev tip and verify:
 
 ```bash
 git fetch origin dev
-git checkout -b "issue-$TASK_GID" origin/dev
+git checkout -b "$BRANCH" origin/dev
+[ "$(git merge-base HEAD origin/dev)" = "$(git rev-parse origin/dev)" ] || echo "STOP: $BRANCH is not on the origin/dev tip."
 ```
 
-Then verify the new branch sits exactly on the dev tip:
+On STOP, don't work around it. Go to **On failure**.
+
+## Step 2 — Plan
+
+**Bug mode.** If the title or body says bug, regression, broken, error, fails, incorrect or crash, run `/investigate` before writing code. Every kept change must tie to the reported symptom. Adjacent suspicious code that doesn't reproduce the bug stays out; note it as a follow-up in the PR body or a comment.
+
+**Explore with a subagent.** Don't read broadly in the main context. Spawn `devtools:task-explorer` (Agent tool, `subagent_type: "devtools:task-explorer"`) with the brief. It returns files to change, the pattern to copy, ripple, tests, risks and size. Read only the files it names.
+
+**Downstream tests.** Before changing a user-visible string, error fallback, render branch or exported component, make sure the brief lists the specs that assert on it (`tests/e2e/tests/**`, `**/*.test.ts(x)`, `**/*.spec.ts`). Keep them green, or update them in the same commit and say why.
+
+**Write the plan** in the conversation (not a committed file): Problem (1–2 sentences), Approach (3–7 bullets), Files, Edge cases, Out of scope, Verification. For features and non-trivial refactors (not bug mode, not review-revision runs), run `/autoplan` on it.
+
+If the plan grows materially past the task as written, comment the expansion, transition to `blocked`, and stop without code. A human re-scopes.
+
+## Step 3 — Size and stacking
+
+Split into a stack of PRs when any holds:
+
+- roughly > 400 changed lines;
+- several independent layers (e.g. schema + API + UI);
+- several separately reviewable concerns.
+
+Use `gh stack` (`init`, `add`, `submit`, `sync`). `branch-and-pr` owns the commands and the ordering rules: independent slices go on dev, dependencies at the bottom. Each slice passes Steps 5–7 on its own before the next starts. Name slices `<branch>-<n>-<slice>`.
+
+## Step 4 — Load conventions
+
+From the plan's Files list (later: `git diff --name-only origin/dev...HEAD`), invoke each matching skill with the Skill tool before writing code in that area. Re-check when the diff reaches new paths.
+
+| Paths | Skills |
+|---|---|
+| always | `devtools:code-conventions` |
+| `services/db/**` | `devtools:drizzle-migrations` |
+| `services/api/src/routers/**`, `services/api/src/encoders/**` | `devtools:api-endpoints`, `devtools:access-control` |
+| uploads / storage / signed URLs | `devtools:api-endpoints` (its `references/file-uploads.md`) |
+| `packages/common/src/services/**` | `devtools:service-layer-structure` (plus `devtools:access-control` when it gates on roles) |
+| `packages/common/src/realtime/**`, `services/realtime/**`, or a new mutation that others must see | `devtools:realtime-channels` |
+| `apps/app/**/*.tsx` | `devtools:component-file-structure` |
+| any `.tsx` / `.jsx` | `vercel:react-best-practices` (always) |
+| user-facing strings (`apps/app/**`, emails, error messages shown to users) | `devtools:i18n-strings` |
+| `packages/sense/**`, `packages/styles/**`, or UI library components | `devtools:sense-conventions` |
+| `*.test.ts(x)`, `*.spec.ts`, `tests/e2e/**` | `devtools:test-conventions` |
+
+## Step 5 — Implement (red-green-refactor)
+
+1. **Red**: one test that fails for the right reason.
+2. **Green**: the minimum code to pass it.
+3. Repeat until the plan is done, then **refactor** while green.
+
+Pure refactors: red is "existing tests still pass". Docs or config only: skip RGR. Commit in small conventional commits (`branch-and-pr`), with `pnpm format:changes` first every time.
+
+Once the change is drafted, run `pnpm blast-radius --base origin/dev --quiet` (`devtools:blast-radius` explains the output). If the reach (importers and packages touched) is out of proportion to the task, find the narrower change point and narrow the diff.
+
+## Step 6 — Gates
+
+Delegate to `devtools:gate-runner` (Agent tool, `subagent_type: "devtools:gate-runner"`) so logs stay out of context. Tell it the touched packages and whether UI flows changed. It runs and returns failures only:
+
+1. `pnpm format:changes`
+2. typecheck per touched package (`pnpm w:app typecheck`, `pnpm w:api typecheck`, …; `pnpm typecheck` for all)
+3. unit tests for touched packages (`pnpm w:<pkg> test`)
+4. `pnpm test:coverage`, then `pnpm health --base origin/dev`
+5. `pnpm blast-radius --base origin/dev --quiet`
+6. `pnpm e2e` when UI flows, routes, or API surface used by the UI changed
+
+Fix each failure in the main context and re-run the gate-runner until it reports all PASS.
+
+**CRAP.** `pnpm health --base origin/dev` exits non-zero when a changed file has a function at CRAP ≥ 30. Iterate: add tests for the uncovered branches first, split or flatten second, until it exits 0 with `CRAP: OK`. `CRAP: STALE` is not a pass. `--json` always exits 0, so never gate on it. Formula, scope, held-out workspaces and the delta rule: [references/crap.md](references/crap.md).
+
+**Task verification.** Execute every verification step from the brief: open the URL, walk the flow, inspect the data. Confirm the observed behavior. If there are none, the gates are the bar.
+
+**A failing or unrun gate is a stop signal.** Not acceptable as reasons to ship: "pre-existing errors", "files I didn't touch", "environment / sandbox", "CI will verify". Try the obvious recovery (reinstall deps, restart the test Supabase). If it still fails for reasons outside the diff, go to **On failure**.
+
+## Step 7 — Review loop
+
+1. Run `/simplify` on the diff. Apply what it finds.
+2. In **one message**, spawn the reviewers whose areas the diff touches, plus `/review` and the codex adversarial review (`/codex`), so every perspective scores the same revision:
+   - `devtools:backend-reviewer`: `services/**`, `packages/common/**`
+   - `devtools:frontend-reviewer`: `apps/app/**`, `packages/sense/**`, any `.tsx`
+   - `devtools:test-reviewer`: any test or spec file changed, or behavior changed without one
+3. Fix every finding, or record a deliberate non-change with a one-line reason (commit message or comment).
+4. Re-run the gate-runner (CRAP numbers are invalid after any edit).
+5. Repeat 2–4 until a round produces no new actionable findings (every item is fixed or marked as a deliberate non-change). Cap: **10 rounds**. If round 10 still has actionable findings, don't ship: comment the open findings and what you tried, leave the task `in_progress`, and stop for direction.
+
+## Step 8 — Draft PR and hand-off
+
+1. Push the branch and open the PR. `pr-description` owns the body. Include the source link (Asana URL, `Closes #<n>`, or nothing for local). Leave out CRAP and blast-radius numbers; CI posts both.
 
 ```bash
-if [ "$(git merge-base HEAD origin/dev)" != "$(git rev-parse origin/dev)" ]; then
-  echo "STOP: issue-$TASK_GID is not based on the origin/dev tip."
-fi
+git push -u origin "$BRANCH"
+gh pr create --draft --base dev --title "<conventional title>" --body-file <file>
 ```
 
-If the guard prints STOP, do not work around it and do not proceed to Step 2 — something rebased or blocked the branch creation. Report the state to the caller (or follow Step 8 "On failure") so a human can untangle it.
+   For a stack, `gh stack submit --auto` pushes every slice and opens the PRs as drafts. Then set each body with `gh pr edit <n> --body-file <file>`.
+2. Run the adapter's **hand-off** (assignee, "PR opened" comment, `in_review`).
+3. When CI finishes, read the PR-metrics comment (see `references/crap.md`). Fix any CRAP regression on a function you touched, or any file pushed over 30, and push again.
 
-## Step 2 — Read the task
+## On failure
 
-Pull the task body and stories via `asana-api` (the skill has the
-endpoint reference). Capture any verification steps from
-`notes` and the most recent stories — `## Verification`,
-"Verify by:", "Acceptance criteria", or any clearly-demarcated set
-of concrete steps. You'll execute them in Step 7.
-
-If `notes` references a parent PRD, pull that too.
-
-## Step 3 — BUG MODE
-
-If the task is a bug fix — title or description contains "bug",
-"regression", "broken", "error", "fails", "incorrect", or "crash" —
-run `/investigate` BEFORE writing any code. The skill produces a
-structured root-cause hypothesis; use it to inform the RGR loop in
-Step 6.
-
-When you ran `/investigate`, skip Step 4 (PLAN REVIEW) — the
-investigation already covers the design context.
-
-Every code change kept after `/investigate` must be tied to the
-reported symptom. If the investigation flags adjacent suspicious
-code that doesn't reproduce the bug, leave it alone — open a
-separate Asana follow-up if it's worth tracking. Speculative fixes
-bundled into a bug-fix PR get the PR rejected.
-
-## Step 4 — PLAN REVIEW
-
-For features and non-trivial refactors, run `/autoplan` against a
-draft plan **before** writing any code.
-
-Skip entirely for:
-- Bug fixes (Step 3 BUG MODE replaces this).
-- Revision-mode runs (the feedback already replaces the plan
-  review).
-
-Otherwise: draft a short plan file (`.plans/$TASK_ID.md` or your
-project's conventional path) with **Problem** (1-2 sentences),
-**Approach** (3-7 bullets), **Files**, **Edge cases**, **Out of
-scope**. Half a page. Then invoke `/autoplan` and pass the path —
-it runs CEO → Design → Eng → DX reviews and writes the revised
-plan back.
-
-If `/autoplan` flags scope changes that materially expand the task
-beyond the Asana ticket, post a comment on the task summarising
-the expansion and **abort without committing code** (see Step 8
-"On failure" — move to Blocked). A human will re-scope.
-
-Commit the reviewed plan file in the same commit as the first
-implementation change.
-
-## Step 5 — EXPLORATION
-
-Read the relevant code; pay extra attention to test files near the
-parts you're about to change.
-
-**Downstream test scan.** Before changing any user-visible string,
-error fallback, render branch, or exported component, grep
-`tests/`, `**/*.spec.ts`, `**/*.test.ts` for assertions that
-reference it. If matches exist, your change must either keep the
-assertion green or update it in the same commit with a one-line
-note explaining why. Silently breaking a previously-green
-assertion (especially in `tests/e2e/`) is the most common way
-these PRs regress real behavior.
-
-## Step 6 — EXECUTION (RGR)
-
-Red-Green-Refactor:
-
-1. **RED**: write one test that fails for the right reason.
-2. **GREEN**: write the minimum implementation to pass it.
-3. **REPEAT** until the task is done.
-4. **REFACTOR** once green.
-
-For pure refactors with no behavior change, the RED step is "the
-existing tests still pass after the refactor" — don't invent
-synthetic tests. For docs- or config-only changes, skip RGR.
-
-## Step 7 — FEEDBACK LOOPS
-
-### ALWAYS format before every commit
-
-Before **every** `git commit` — the plan commit, every RGR commit,
-every fixup commit — run:
-
-```bash
-pnpm format
-```
-
-No exceptions. "It's a one-line change", "it's only markdown",
-"only the plan file changed" — still run it.
-
-Before signaling complete (run all of them; do NOT cherry-pick):
-
-```bash
-pnpm typecheck
-pnpm test
-pnpm e2e                          # playwright; pnpm test does NOT include this
-```
-
-Then run the fallow audit via the MCP — `mcp__fallow__audit` (verdict
-must be `"pass"`). If the fallow MCP isn't registered on this machine,
-fall back to `npx fallow audit --format json`; the verdict field is
-the same.
-
-Skip `pnpm e2e` only when the diff has no UI / route / API
-surface. Note the reason in the commit message; the reviewer
-re-runs it either way.
-
-**Task-specific verification.** Walk through every verification
-step from the Asana task (Step 2). Execute each — open the URL,
-walk the flow, inspect the data — and confirm the observed
-behavior matches what's expected. If the task has none, or its
-notes say to skip, fall back to the standard gates above.
-
-### CRAP metrics — measure, then iterate
-
-Once the gate suite is green, score every function the branch
-adds or changes. CRAP is the Change Risk Anti-Patterns score. It
-combines what a function costs to understand with how much of it
-the tests reach, so it points at the function where a test or a
-split cuts the most risk. The numbers are for you to act on here.
-CI computes and posts its own on the PR; they do not go in the PR
-body.
-
-```
-CRAP = cognitive² × (1 − coverage)³ + cognitive
-```
-
-`coverage` is a fraction from 0 to 1. Round the score to a whole
-number. **Complexity is cognitive, not McCabe cyclomatic.**
-`configs/fallow/README.md` in `common` owns the formula and the
-metric; cite it rather than restating it. Cognitive charges for
-nesting where cyclomatic counts branches, and the two diverge far
-past the margin on real code (`ReviewSummaryView` on #2090:
-cyclomatic 24 against cognitive 34, CRAP 600 against 1190).
-Fallow's own `crap` column is a third number again, because it
-hardcodes cyclomatic and reads coverage off static reachability.
-`pnpm health` prints that column with a note saying it is not the
-one that gates. Don't act on it.
-
-Read the numbers off the tool instead of counting by hand:
-
-```bash
-git diff origin/dev...HEAD   # the functions you owe a score
-pnpm test:coverage           # needs Docker + `pnpm w:api test:supabase:start`; ~4 minutes
-pnpm health
-```
-
-`pnpm health` names the worst function in every changed file at
-CRAP 30 or worse, with its cognitive score and its measured
-coverage. For the functions under that line,
-`scripts/lib/fallow-crap.mjs` shows the inventory pass it reads
-them from: `fallow health --quiet --complexity --max-cyclomatic 0
---max-cognitive 0 --format json` returns every function with its
-`path`, `name`, `line`, and `cognitive`. Work from the diff, not
-from your memory of the task. A function you touched in a
-`/review` pass counts.
-
-`coverage` is measured, not guessed. `pnpm test:coverage` merges
-the instrumented runs into `coverage/coverage-final.json`, and the
-score reads each function's statement coverage over its line
-span. A report older than your last edit is not a source;
-`pnpm health` reports `CRAP: STALE` rather than a green it cannot
-back up. Estimate only when the function lives in a workspace
-held out of instrumentation: `UNMEASURABLE` in
-`scripts/lib/fallow-crap.mjs` is that list (`apps/app` and
-`packages/sense` today). Read the constant; don't infer it from
-the path. Where it applies, divide the branches a test exercises
-by the function's total branches, and use 0 when no test reaches
-the function.
-
-Then iterate. For every changed function at 30 or worse, pull
-the cheaper lever:
-
-1. **Add a test that reaches the untested branches.** Coverage is
-   cubed in the formula, so it moves the score fastest. A
-   function at cognitive 12 drops from 156 to 24 when coverage
-   goes from 0% to 60%.
-2. **Split or flatten the function** when the test is the
-   expensive part: extract the nested arms, replace nested
-   conditionals with early returns, lift a loop body into its
-   own function. Each cut lowers `cognitive`, which is squared.
-
-After each change, re-run `pnpm typecheck` and `pnpm test`, then
-`pnpm test:coverage` and `pnpm health` again. Repeat until no
-changed function is at 30 or worse, or until every remaining
-score has a reason you can state in one line (the retry branches
-need a live queue; the component sits in an `UNMEASURABLE`
-workspace and the e2e suite exercises it). Record that reason in
-the commit message or the task comment so the reviewer, and the
-next pass, can see it. "Nothing here is risky" is not a reason;
-the score is.
-
-A late fix invalidates the numbers. If the `/simplify` or
-`/review` passes below change any function after you scored it,
-run `pnpm test:coverage` and `pnpm health` once more before you
-open the PR, and iterate again on anything they push over 30.
-
-### Mandatory cleanup + review pass
-
-Once the gate suite is green and the CRAP pass is done, run — in
-this order, every time, no exceptions:
-
-1. `/simplify` — strip cruft, dead code, premature abstractions,
-   and over-engineered scaffolding from the diff. Apply the
-   suggested simplifications, then re-run `pnpm typecheck`,
-   `pnpm test`, and `pnpm e2e` to confirm the simplified code
-   still passes.
-2. `/review` — final code review on the diff, run as a **loop**
-   until the diff is ship-ready:
-   1. Run `/review` against the current diff. Always call the
-      codex adversarial review alongside it so both perspectives
-      score the same revision.
-   2. Apply the fixes for every finding (or, if a finding is a
-      deliberate non-change, record the reason in the commit
-      message or task comment so the next pass can see it).
-   3. Re-run `pnpm typecheck`, `pnpm test`, and `pnpm e2e` to
-      confirm the fixes didn't regress the gate suite.
-   4. Re-run `/review` (and the codex adversarial review) on the
-      updated diff.
-   5. Repeat 2–4 until a full pass produces no new actionable
-      findings — i.e. every remaining item is either already
-      addressed in this pass or explicitly marked as a deliberate
-      non-change. Only then is the diff ready to ship.
-
-   Cap the loop at **10 `/review` iterations**. If the 10th pass
-   still surfaces actionable findings, do NOT silently keep
-   looping and do NOT ship anyway — stop, post a comment on the
-   Asana task summarising the outstanding findings and what you
-   tried, and ask the user how to proceed. Treat this as a
-   hand-off, not a failure: the task stays in In-Progress while
-   you wait for direction.
-
-   Within that cap, "ready to ship" is the only exit condition.
-   Do not exit early because the remaining findings feel minor
-   or because you're confident the reviewer will catch the rest
-   — keep iterating until `/review` comes back clean or you hit
-   the 10-iteration cap.
-
-Skip neither. "The diff is small" / "I already self-reviewed" /
-"there's nothing to simplify" are not valid reasons to skip —
-run both and let them confirm.
-
-### A failing or unrun gate is a STOP signal
-
-The reviewer re-runs every gate from a clean checkout. Shipping
-with skipped or hand-waved gates is the most expensive failure
-mode in this pipeline.
-
-You MUST NOT signal completion citing any of:
-
-- "Pre-existing errors", "errors in files I didn't touch",
-  "module resolution issues unrelated to my change".
-- "Infrastructure", "environment", "sandbox limitation".
-- "I'll let CI verify", "the reviewer will re-run".
-
-These are recoverable problems you must address on this branch.
-Try the obvious recovery (e.g. reinstall deps for environment
-issues — see the caller's prompt or runbook for project-specific
-recovery steps).
-
-If after recovery the gate still fails for reasons genuinely
-outside the diff, treat it as on-failure (Step 8 "On failure") —
-post a Blocked comment and move the task to `ASANA_BLOCKED_SECTION_ID`.
-
-## Step 8 — Done / not done
-
-### Done
-
-When gates are green and `/simplify` + `/review` are clean, write the PR body — `pr-description` owns what goes in it. CI computes and posts the blast radius and the CRAP metrics on every PR; the scores you iterated on in Step 7 stay out of the body.
-
-Open a PR targeting `dev`. **Always open the PR in draft mode** (`gh pr create --draft --base dev`) — every PR from this skill starts as a draft so the reviewer can opt in to the green-light moment instead of being paged the second CI starts. Include the Asana task URL (`https://app.asana.com/0/$ASANA_PROJECT_ID/$TASK_GID`) in the PR description so reviewers can jump to the task. The branch hooks will block any attempt to commit/push to `main` or `dev` directly. See `branch-and-pr` for the PR template / conventional-commit rules.
-
-### Assign the PR to the Asana assignee
-
-After the PR is open, set the PR's assignee to the GitHub user that matches the Asana task's assignee. Only three GitHub assignees are valid: `scazan`, `valentin0h`, `nourmalaeb`. Map by the Asana assignee's first name (case-insensitive):
-
-| Asana assignee first name | GitHub login |
-| --- | --- |
-| Scott | `scazan` |
-| Valentin | `valentin0h` |
-| Nour | `nourmalaeb` |
-
-If the Asana assignee doesn't map to one of the three (unassigned, someone else, or ambiguous), skip the assignment. Don't guess.
-
-```bash
-# Look up the Asana assignee's name.
-ASSIGNEE_NAME=$(curl -s -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID?opt_fields=assignee.name" \
-  | jq -r '.data.assignee.name // empty')
-
-case "$(echo "$ASSIGNEE_NAME" | tr '[:upper:]' '[:lower:]')" in
-  scott*)     GH_ASSIGNEE="scazan" ;;
-  valentin*)  GH_ASSIGNEE="valentin0h" ;;
-  nour*)      GH_ASSIGNEE="nourmalaeb" ;;
-  *)          GH_ASSIGNEE="" ;;
-esac
-
-if [ -n "$GH_ASSIGNEE" ]; then
-  gh pr edit --add-assignee "$GH_ASSIGNEE"
-fi
-```
-
-Then post the PR link to the task and move it to In-Review:
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"data\":{\"text\":\"PR opened: <pr-url>\"}}" \
-  "https://app.asana.com/api/1.0/tasks/$TASK_GID/stories"
-
-curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
-  "https://app.asana.com/api/1.0/sections/$ASANA_IN_REVIEW_SECTION_ID/addTask"
-```
-
-(`ASANA_IN_REVIEW_SECTION_ID` is in `.env.local.example`. If unset, leave the task in In-Progress and ask the user where it should go.)
-
-### On failure
-
-If anything goes wrong mid-task (build broken, requirements ambiguous, scope blew up, gate failed for reasons outside the diff), do **not** quietly leave the task in In-Progress, and do **not** move it back to Backlog yourself — re-picking it without new info just leads to the same failure. Move it to Blocked so a human can review, add the missing context, and move it back to Backlog when it's ready for another attempt:
-
-1. Add a story explaining exactly what blocked — what you tried, what failed, the error or ambiguity, and what info you'd need to retry. Be specific; the human reading it should be able to act without spelunking.
-2. Move the task to `ASANA_BLOCKED_SECTION_ID`:
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $ASANA_PERSONAL_ACCESS_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d "{\"data\":{\"task\":\"$TASK_GID\"}}" \
-     "https://app.asana.com/api/1.0/sections/$ASANA_BLOCKED_SECTION_ID/addTask"
-   ```
-3. Leave the local claim cache file (`~/.cache/claude-pickup/$TASK_GID`) in place. When the human moves the task back to Backlog with new info, the next pickup run will recognize it as a retry (see Step 1) and read the newly-added comments as additional context.
-4. Do NOT close the task.
-
-## Scope rules
-
-- ONE task at a time. Don't pull adjacent fixes into the diff.
-- In revision mode, the issue scope is **the feedback** — don't
-  expand into unrelated changes.
-- Stay on the feature branch. Pushing to `main` or `dev` is
-  blocked by hooks (see `branch-and-pr`).
+Build broken, requirement ambiguous, scope blew up, gate failing outside the diff, or the branch guard printed STOP: don't leave the task silently in progress. Comment exactly what blocked (what you tried, what failed, the error, what a retry needs), transition to `blocked`, and stop. Never move a task back to its backlog yourself, and never close it.

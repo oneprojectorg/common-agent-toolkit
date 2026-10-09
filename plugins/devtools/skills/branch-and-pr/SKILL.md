@@ -1,53 +1,84 @@
 ---
 name: branch-and-pr
-description: Branching and PR workflow — feature branches off dev with issue-<task_gid> naming, conventional commits, and gh pr create --base dev. Stack only what genuinely depends on the branch below it (an independent schema PR bases on dev; a dependency goes at the bottom, never mid-stack), because reordering a stack inflates every diff above it — GitHub's merge-base does not move, so a rebase after the parent merges is the only fix. Use before any commit or push, when opening a PR, when deciding whether to stack, or when asked about branch names, rebasing, or merging dev.
+description: "Scope, branches, commits and PRs: one task per PR, branch off origin/dev, conventional commits, draft PRs to dev, stacked PRs with gh stack, and what the protected-branch hooks block. Use before a commit or push, when opening or stacking a PR, or when a change grows past its task."
 ---
 
-## Rules
+## Scope: one task per PR
 
-- **Never commit directly to `main` or `dev`.** Both are protected by the plugin hooks (`block-protected-branches.sh`, `require-feature-branch.sh`).
-- All work happens on a feature branch off `dev`. Naming: `issue-<task_gid>` — the literal `issue-` prefix plus the Asana task gid. Single convention for humans and agents alike. Two reasons it's a hard rule:
-  1. Anyone (or any agent) opening a branch for the same task derives the same name, so parallel pickups coordinate instead of forking.
-  2. Reviewers can map a branch back to its task at a glance without grepping the PR description.
-  If there genuinely isn't an Asana task, create one first — that's the entry point for any non-trivial change.
-- Open a pull request targeting `dev`, **always in draft mode** (`gh pr create --draft --base dev`). The author marks it ready for review when they're satisfied; agents never open a PR straight to "ready". Releases from `dev` to `main` go through `/release`.
+- The PR does the task and nothing else. A bug fix ships no refactor; a refactor ships no feature.
+- A fix you tripped over goes on its own branch off `origin/dev`, as you find it. Saying "bundled" in the PR body does not make it OK to bundle.
+- Exception: a trivial, load-bearing change (a one-line config tweak without which nothing runs). Name it in the PR body.
+- Revert a rewrite of nearby code that nobody asked for, unless you can say what it buys. Add no speculative feature flags.
+- Adjacent problems you see become follow-up tasks or separate PRs, not scope growth.
+- If you patch a call site and not the upstream cause, name the cause in the PR body and file it.
+- Re-adding code the repo deleted? Start from the deleting commit's parent, not a fresh rewrite.
 
-## Workflow
+## Branches and commits
 
-1. `git fetch origin dev && git checkout -b "issue-$TASK_GID" origin/dev` — always base the branch explicitly on `origin/dev`. A bare `git checkout -b` branches from the current HEAD (stacking the new task on whatever was checked out last), and `git checkout dev` itself is hook-blocked.
-2. Make edits. **Before every `git commit`, run `pnpm format`** — no exceptions, including plan commits and one-line fixes. Then commit with a conventional message: `feat(scope): summary`, `fix(scope): summary`, `refactor(...)`. Write the summary and any body lines in the `technical-writing` skill's Simplified Technical English — active voice, one word per meaning, no filler.
-3. Push the feature branch: `git push -u origin "issue-$TASK_GID"`.
-4. Open the PR with `gh pr create --draft --base dev`. If the task has an Asana assignee that maps to a valid GitHub user (`scazan` / `valentin0h` / `nourmalaeb`), set it as the PR assignee with `gh pr edit --add-assignee <login>` — see `implement-task` Step 8 for the mapping.
-5. Never `git push --force` to a shared branch unless you are rebasing. If you must rewrite history, do it on your own feature branch only.
+- Never commit on `main` or `dev`. Create every branch explicitly from `origin/dev`:
+  `git fetch origin dev && git checkout -b <branch> origin/dev`. A bare `git checkout -b` stacks on whatever HEAD was.
+- Branch names: `issue-<asana_gid>` for an Asana task, `issue-gh-<n>` for a GitHub issue, `<type>/<slug>` for a spec or prompt. The same task always gives the same name, so parallel pickups collide visibly.
+- Before every commit run `pnpm format:changes`. It formats files that differ from the index, so run it before `git add`. CI runs `pnpm format:check`.
+- Commit messages: conventional (`feat(scope): …`, `fix(scope): …`, `refactor(scope): …`), written per the `technical-writing` skill.
+- Force-push (`--force-with-lease`) only your own feature branch, after a rebase.
 
-## Stacking: only stack what actually depends on the parent
+## Pull requests
 
-A stack is for work that cannot compile or run without the branch below it. A PR that nothing depends on goes straight on `dev`, even when you happened to write it while working on the stack. PR #1951 (a schema migration sitting mid-stack) drew *"We can also probably base this one directly off of `dev` and not have it in the stack here (or at the bottom of the stack instead of mid-stack)."*
+- `gh pr create --draft --base dev`. Agents never open a PR as ready; the author marks it ready.
+- Title: conventional-commit form, under 70 characters. The body follows the `pr-description` skill.
+- Releases (`dev` → `main`) go only through the `release` skill.
 
-The cost of getting it wrong is not stylistic. Reordering a stack rewrites the branches above it, and GitHub diffs each PR against a merge-base that does **not** move — so a reordered branch carries commits it does not own and the diff inflates. PR #1917 opened at 18 files / +18,008 when the real change was 13 files / +1,439, and the fix was *"a rebase after #1956 merges. Git drops the duplicate commit by patch-id and the count falls to 13. The merge alone does not fix it, because the merge-base does not move."*
+## Stacked PRs (`gh stack`)
 
-So, in order: base an independent change on `dev`; put a dependency at the **bottom** of the stack, not in the middle; if you reorder anyway, say in the PR body which files belong to which PR and tell reviewers with the branch checked out to reset to `origin` rather than merge. And when a PR is superseded by a reordered sibling, close it with the pointer — *"Superseded by #1917, which carries these three commits directly (byte-identical patches, different SHAs)"* — so the review history stays followable.
+Stack when a task is large (more than about 400 changed lines) or splits into layers that each review on their own (schema → service → API → UI). Each slice must do something observable; a slice that only adds a helper with no caller goes into the PR that calls it.
 
-## What hooks block
+- Stack only what depends on the slice below. A change nothing depends on (an independent migration) goes straight on `dev`. Put a dependency at the **bottom**, never mid-stack.
+- The bottom PR targets `dev`. Each PR above uses the slice below it as its base.
 
-The pre-tool hooks in `.claude/hooks/` will refuse:
-- Pushing to `main` or `dev` (incl. `--force` / `--force-with-lease`).
-- Destructive ops: `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- <path>`.
-- Switching HEAD onto `main`/`dev` (`git checkout dev`, `git switch main`).
-- `gh pr create --base main` outside the `/release` flow.
-- Anything else that names `main`/`dev` and isn't on the read-only/sync allowlist (`gh api .../branches/dev/...`, etc.).
-- Commits while currently on `main` or `dev` (separate hook).
+Flow. The repo's default branch is `dev`, so `gh stack init` needs no `--base`. Do not pass `--base dev`: the hook blocks a `gh` command that names `dev`.
 
-What's **allowed** without any marker:
-- Creating a new branch from a protected ref: `git checkout -b <branch> origin/dev` / `git switch -c <branch> origin/dev`.
-- Read-only and local-sync git verbs against protected refs: `git fetch origin dev`, `git rebase origin/dev`, `git merge origin/dev`, `git pull origin dev`, `git diff origin/main..HEAD`, `git log main..feature`, `git show origin/dev:path`. The standard "keep my feature branch in sync with dev" flow just works.
-- `git push --force` / `--force-with-lease` to **feature** branches — needed after a rebase.
-- `gh pr create --base dev` — the normal feature → dev PR.
+```bash
+git fetch origin dev && git checkout -b issue-<gid>-schema origin/dev
+gh stack init issue-<gid>-schema                 # adopt that branch as the bottom layer
+# edit, pnpm format:changes, commit
+gh stack add -Am "feat(api): add review endpoint" issue-<gid>-api   # new layer on top; commits staged changes
+gh stack view --short                            # branches, PRs, "needs rebase" markers
+gh stack submit --auto                           # push all; create/update PRs (drafts with --auto); wire bases
+gh stack sync                                    # fetch, cascade-rebase onto updated parents, push, sync PR state
+gh stack rebase [--upstack|--downstack]          # cascade rebase; --continue / --abort on conflict
+gh stack push                                    # push branches only
+gh stack up | down | top | bottom                # move between layers
+```
 
-## The one exception: `/release`
+- `gh stack init a b c` creates or adopts several layers at once, bottom to top.
+- After `submit --auto`, set each title and body with `gh pr edit <n> --title … --body …`. Never pass `--open`; PRs stay drafts.
+- After a lower PR merges, run `gh stack sync` (add `--prune` to drop merged branches). GitHub's merge-base does not move on merge. Only the rebase removes the merged commits from the diffs above.
+- If you reorder a stack, say in each PR body which files belong to it. Close a superseded PR with a pointer to its replacement.
 
-The release command opens the dev → main PR. It works by prefixing its git/gh calls with `CLAUDE_RELEASE=1`, which the protected-branch hook reads as "allow read-only inspection of dev/main and the `gh pr create --base main --head dev` call." Pushes to `main`/`dev` are still rejected even under the marker.
+## What the plugin hooks block
 
-Don't use `CLAUDE_RELEASE=1` outside of `/release`. If you find yourself reaching for it, you're routing around the policy.
+`hooks/block-protected-branches.sh` (any Bash call that runs `git`/`gh`):
 
-If you hit a block, switch to a feature branch — don't try to bypass it.
+- Always blocked, even with the marker: `git push` that names `main`/`dev` (including force); `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- <path>` / `git checkout .`.
+- Allowed: `gh pr create --base dev`; `git checkout -b|switch -c <branch> [origin/]dev`; read and local-sync verbs naming `main`/`dev` (`fetch`, `pull`, `rebase`, `merge`, `diff`, `log`, `show`, `status`, `rev-parse`, `ls-remote`, `blame`, `range-diff`, and similar).
+- Blocked unless prefixed `CLAUDE_RELEASE=1`: `gh pr create --base main`, and any other `git`/`gh` command that names `main`/`dev` (`git checkout dev`, `git switch main`, `gh api …/branches/dev`, `gh stack init --base dev`).
+- `CLAUDE_RELEASE=1` is for the `release` skill only. Never use it anywhere else.
+
+`hooks/require-feature-branch.sh`: blocks `git commit` while HEAD is `main` or `dev`.
+
+In common, the project hook `.claude/hooks/block-gh-main.sh` also blocks every `git`/`gh` command that names `main`, with no marker exception (so `git diff origin/main..HEAD` fails there; diff against `origin/dev`).
+
+If a hook blocks you, move to a feature branch. Do not route around it.
+
+Past review incidents: [references/lessons.md](references/lessons.md).
+
+## Review checklist
+
+- [ ] The diff does one task; no bundled fix, unrequested refactor or speculative flag
+- [ ] Any trivial load-bearing extra is named in the PR body
+- [ ] Branch was cut from `origin/dev` and follows the naming rule
+- [ ] Commits are conventional and the diff is formatted (`pnpm format:check` clean)
+- [ ] PR is a draft against `dev` (or the slice below, in a stack)
+- [ ] Each stacked slice depends on the one below and does something observable on its own
+- [ ] Independent changes (such as a standalone migration) are not mid-stack
+- [ ] No `CLAUDE_RELEASE=1` outside the release flow; no force-push to a shared branch

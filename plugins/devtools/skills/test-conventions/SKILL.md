@@ -1,245 +1,119 @@
 ---
 name: test-conventions
-description: Test conventions — Vitest for unit / service-layer / integration tests (.test.ts, run with pnpm test) vs Playwright for end-to-end (.spec.ts, run with pnpm e2e), the E2E env shim, and the describeAccessTierGating helpers for access-tier gating coverage on tRPC endpoints. Use when writing a new test, deciding between unit vs integration vs e2e, picking the right file suffix or location, naming a describe / it block, adding gating coverage to a new procedure, waiting on async state in Playwright without a flaky hardcoded sleep (use auto-retrying assertions), selecting an element by testid/role instead of structural DOM traversal, seeding through the service layer instead of hand-writing rows (the harness is @op/common/testing — Vitest takes the main entry and its Test*DataManager classes, Playwright takes @op/common/testing/data; tests/core and @op/test are gone — extend the shared factory rather than inserting per spec, and know which derived writes a raw insert skips), picking the right suffix in packages/common where `.unit.test.ts` and `.test.ts` route to different Vitest projects (and checking what a wholesale rename left the other project running), making a fixture's two candidate sources differ so the test can prove which one the code read, keeping production's validation on a fixture shortcut, using randomUUID rather than Math.random in a helper CodeQL also scans, writing a test data helper that throws like production rather than no-opping, keeping casts out of fixtures and helpers (`as unknown as X` / `as never` hides the production-contract drift the test exists to catch — thread an optional param through the shared factory instead of narrowing at the call site), covering a shared derivation at every surface that consumes it rather than only where you were working, deleting a case that only exercises the Zod schema you handed the function, putting a case on each side of a value-selected branch (a plural arm tested with a count of 1 is the singular arm twice) and pinning the undocumented dependency shape a guard reads, using a real parser instead of a hand-rolled reader in the assertion path, testing the intersection of two behaviours a change makes coexist rather than each half, keeping `as const` in fixtures (it is a const assertion, not a type assertion a review bot should strip), covering a boundary the mocks erase (a fully stubbed store cannot catch a phone number stored without the `+` it is compared against, and @inngest/test exercises neither debounce nor singleton), testing a new request boundary through its real parse path rather than a pre-built parameter object, proving a shared-browser-state invariant with a second Playwright page rather than one tab, validating a test-only env override before it reaches a shell, debugging a failing test, or fixing missing env vars in Playwright runs.
+description: "Vitest (.test.ts / .unit.test.ts) and Playwright (.spec.ts) in common: @op/common/testing data managers, describeAccessTierGating, the E2E env shim, fixtures, flaky waits. Use when writing or fixing a test, seeding fixtures, or debugging pnpm test / pnpm e2e."
 ---
 
-## Three test surfaces
+CLAUDE.md owns the basics: the `.unit.test.ts` vs `.test.ts` split, `pnpm test`, `pnpm w:common test:unit|test:integration`, `pnpm test:supabase:start`.
 
-| Kind | Runner | Location | Suffix | Run with |
-|---|---|---|---|---|
-| **Unit / service-layer / integration** | Vitest | `services/api/src/**`, `services/realtime/src/**`, `packages/common/src/**`, `services/emails/.react-email/**` | `.test.ts` (`.unit.test.ts` in `packages/common` — see below) | `pnpm test` (root, runs Turbo across workspaces) or `pnpm w:api test` for a single workspace |
-| **E2E (browser)** | Playwright | `tests/e2e/tests/<feature>.spec.ts` | `.spec.ts` | `pnpm e2e` (root) or `pnpm w:e2e e2e` |
-| **A11y baseline** | Playwright | `tests/e2e/tests/a11y-baseline.spec.ts` | `.spec.ts` | `pnpm a11y:baseline` (or `pnpm w:e2e a11y:baseline`) |
+## Where a test goes
 
-Keep the suffixes consistent — `.test.ts` files are picked up by Vitest, `.spec.ts` by Playwright. Don't mix them.
-
-### In `packages/common`, the suffix also picks the Vitest project
-
-`packages/common/vitest.config.ts` declares two projects, and the file name is what routes a test between them:
-
-|  | Unit | Integration |
+| What you test | Runner | Location |
 |---|---|---|
-| File | `<name>.unit.test.ts` | `<name>.test.ts` |
-| Infrastructure | none | test Supabase on 55321 / 55322 |
-| Vitest project | `unit` | `integration` |
-| Run just that project | `pnpm w:common test:unit` | `pnpm w:common test:integration` |
+| Pure logic, service functions | Vitest | next to the source (`votingEligibility.unit.test.ts`) |
+| DB helpers, low-level DB utils | Vitest integration | next to the helper; call it directly against the DB to cover permutations cheaply |
+| tRPC router behaviour | Vitest integration | `services/api/src/routers/<area>/<name>.test.ts` |
+| A flow across UI ↔ API ↔ DB | Playwright | `tests/e2e/tests/<feature>.spec.ts` |
+| Accessibility regression | Playwright | add to `a11y-baseline.spec.ts`; run `pnpm a11y:baseline` |
 
-**The unmarked file is the integration test.** A forgotten `.unit` marker sends a file to the integration project — slow, but correct; the reverse is what to watch for, because a `.unit` marker on a test that needs a database makes it fail for a reason that reads like a bug in the code. The rule is `packages/common`-only: `services/api` has a single integration project, so every test there is an integration test.
+- A bug with a service-layer cause gets a Vitest test, even if the symptom is in the UI. Use Playwright only when the failure needs a browser.
+- `.spec.ts` is Playwright, `.test.ts` is Vitest. Never put `.test.ts` in `tests/e2e/`.
+- One test file per source unit. A second file for the same unit is named `<unit>.<aspect>.test.ts`.
+- A config change that moves files between Vitest projects can empty one project. Check what each project still runs, and add a smoke test to an emptied one.
+- A new a11y violation fails the `a11y-known-violations` check. Fix it. Add an entry to `tests/e2e/a11y-baseline/known-violations.json` only as deliberate, accepted debt. Never delete entries to silence the check.
 
-**A rename that empties a project empties its coverage too.** PR #2011 renamed every existing `packages/common/src` test to `.unit.test.ts`, which the integration project excludes — so the relocated setup, migrations and Supabase clients had no test exercising them at all, and the gap was invisible because the suite still passed. When a config change moves files between projects wholesale, check what each project is left running, and land one smoke test in the one you just emptied.
+## Naming
 
-## Where to add a test
+- `describe` and `it` read as a sentence that says what passes: `it('shows the creator their draft when viewing the phase it was created in')`, not `it('no-JWT caller on non-public instance')`.
+- If you cannot say the test in one sentence, it tests two things. Split it.
+- Merge `it` blocks that share expensive setup into one `it` with several assertions.
 
-Decide by what you're testing, not by where it's easiest to write:
+## Seeding: the `@op/common/testing` harness
 
-- **Pure logic / data shapes / service-layer functions** → Vitest, colocated with the source. Example: `packages/common/src/services/decision/votingEligibility.unit.test.ts` next to `votingEligibility.ts` — pure logic needs no database, so it takes the `.unit` marker.
-- **tRPC router behavior** → Vitest in `services/api/src/routers/<area>/<name>.test.ts`. The default is integration tests against a real Postgres (the workspace test setup boots an isolated Supabase on the `55xxx` range) — that's how we caught the recurring "mock said pass, prod said fail" class.
-- **DB access helpers / low-level utils that touch the DB** → integration test directly against the helper (#1086 review pattern: "I mean an integration test that calls the helper directly against the DB. In the same category as the integration tests we already have, just with a narrower scope than an API test. The win is that we can exhaust permutations of EntityType × policy × admin/non-admin cheaply"). Example: `voteDataAggregator.test.ts`.
-- **A user-visible flow that crosses the UI ↔ API ↔ DB boundary** → Playwright spec in `tests/e2e/tests/`. Use one of the existing specs as a shape reference (`tests/e2e/tests/onboarding.spec.ts`, `proposal-view.spec.ts`, etc.).
-- **Accessibility regression** → add an assertion in `a11y-baseline.spec.ts`, don't fork a new spec.
+Factories and data managers live in `packages/common/testing` (`helpers/Test*DataManager.ts`, `data/`).
 
-If a bug fix has a service-layer cause, the test belongs in Vitest even if the symptom was UI. A Playwright spec is the right call only when the failure mode genuinely needs a browser to reproduce.
-
-**A11y known-violations ledger.** The a11y CI bot (`a11y-known-violations`) diffs each PR's a11y scan against the baseline ledger at `tests/e2e/a11y-baseline/known-violations.json`. Any NEW violation blocks merge until you either fix it or add an explicit entry to that file — the bot comments e.g. `New (3) ⚠️ Either fix or add an entry to tests/e2e/a11y-baseline/known-violations.json`, such as a serious `link-in-text-block` on `/info/columbus-addendum`. Prefer fixing; adding a ledger entry is a deliberate acknowledgement of accepted debt, not a rubber stamp — don't silence the bot by deleting existing entries (PR #1505 / #1521).
-
-**A regression test must reproduce the exact path.** A regression test must fail before the fix and pass after — and for the *exact* reason of the bug. If the obvious test passes both before and after the fix, it isn't exercising the buggy path; engineer the scenario that forces it (PR #1558 self-review: the grid-mode test passed either way, so the regression test used a location-field template to put the sentinel behind the pin query's Suspense boundary and force the late-mount attach). If you can't construct a case that fails on the unpatched code, you haven't proven the fix.
-
-**Cover query internals and wire shape when you change them.** When you rework a query's ordering or relation-hydration internals, add regression tests that pin *distinct* sort-key values and assert the returned order survives the re-order step, and seed a nested relation and assert its hydrated shape is preserved (PR #1516 — the two-step page-then-hydrate rewrite). When you change an endpoint's output shape, add a test asserting the new field survives tRPC's output `parse` — it silently strips any field the encoder doesn't list, so a card renders blank with no error (PR #1551; see the `api-endpoints` skill).
-
-## Naming `describe` and `it` blocks — read like a sentence
-
-Recurring review pattern: `it()` and `describe()` should read like a sentence describing the assertion, not a snippet of jargon.
-
-- ✅ `it('shows the creator their draft when viewing the phase it was created in', ...)`
-- ❌ `it('no-JWT caller on non-public instance', ...)` (review: "Otherwise I'm not really sure if this should pass or fail when I have no JWT.")
-
-When you write a test you can't summarize in a sentence, the test is probably testing two things — split it.
-
-**One test file per source unit** is the default. If you've added `listProposalsBallot.test.ts` *and* `listProposalsPhaseScoped.test.ts` for the same `listProposals.ts`, reviewers will ask you to either merge them into `listProposals.test.ts` or rename to `listProposals.ballot.test.ts` / `listProposals.scoped.test.ts` so the source file is unambiguous (PR #1084).
-
-## Test data reuse
-
-- Use the shared `testData.createProposal` / `createOrganization` / etc. helpers — don't reinvent setup. If a helper needs a new parameter (`status`), thread it through rather than building a parallel fixture.
-- Merge near-identical `it` blocks for performance. Reviewer (#1084): "Can we merge this into 'shows the creator their draft when viewing the phase it was created in' for performance?" Test setup is expensive; one `it` with two assertions is better than two `it`s with the same setup.
-
-## Seed through the service layer, not around it
-
-Reviewer note on #1799: **"Use the service layers in the e2e tests."** A row you insert by hand is a row production never wrote. The test then pins a shape the app doesn't produce — and the derived writes the service would have made are simply absent, so the spec exercises a path that doesn't exist in the product.
-
-**The harness lives in `packages/common/testing`, published as `@op/common/testing`.** PR #2172 moved the data managers there from `services/api/src/test/helpers` so `packages/common`, `services/api` and `tests/e2e` all seed from one place. Four entry points, and picking the wrong one is the usual import error:
-
-| Entry | Holds | Who imports it |
+| Entry | Holds | Imported by |
 |---|---|---|
-| `@op/common/testing` | Supabase helpers, the `Test*DataManager` classes, the `data/` fixtures | Vitest tests (it loads `setup.ts`, which needs a Vitest runtime) |
-| `@op/common/testing/data` | the `data/` fixtures only | Playwright specs in `tests/e2e` |
-| `@op/common/testing/vitest` | config-time options (no Supabase clients) | `vitest.config.ts` files |
-| `@op/common/testing/mocks/deepl` | the `mockTranslateText` spy `setup.ts` installs | tests asserting on translation calls |
+| `@op/common/testing` | Supabase helpers, `Test*DataManager` classes, `data/` fixtures | Vitest tests (loads `setup.ts`, needs a Vitest runtime) |
+| `@op/common/testing/data` | `data/` fixtures only | Playwright specs |
+| `@op/common/testing/vitest` | config-time options | `vitest.config.ts` files |
+| `@op/common/testing/mocks/deepl` | `mockTranslateText` spy | tests that assert on translation calls |
 
-**Vitest integration tests: call the real service.** `packages/common/testing/helpers/TestDecisionsDataManager.ts` is the pattern — *"Uses service-layer calls from @op/common to set up fixtures without tRPC/session overhead"* — importing `createProposal`, `createDecisionInstance`, `advancePhase`, `joinOrganization` from `@op/common` and calling them with a `user`. New fixtures for a service-layer or router test go through that manager, not through fresh `db.insert` calls.
+- **Seed through the service layer.** `TestDecisionsDataManager` calls `createProposal`, `createDecisionInstance`, `advancePhase`, `joinOrganization` from `@op/common`. New Vitest fixtures go through a data manager, not a fresh `db.insert`.
+- **In e2e, seed through `@op/common/testing/data`.** If the factory lacks a field, extend the factory. Push back on any per-spec `db.insert` in review.
+- **The `data/` factories insert rows directly**, so they skip derived writes the services make: unique slugs, phase-default `HIDDEN` visibility, `proposalCategories` link rows, location sync, `parseProposalData` validation, per-instance access roles, `decisionProcessTransitions`, `rootProfileId`/`rootPostId` on posts, moderation and notification rows. An assertion that depends on one of these needs the service path or a factory extension.
+- If a spec must inline a production constant or algorithm, comment what it mirrors (`"Mirrors what createDecisionRole in @op/common writes"`).
+- Thread a new optional param through the shared factory rather than building a parallel fixture.
 
-**Playwright e2e now imports `@op/common/testing/data`** (`tests/core` and the old `@op/test` package are gone). It is still the *data-only* entry rather than the full one, because the main entry loads `setup.ts` and that needs a Vitest runtime — so in e2e the rule is one step removed: **seed through the shared factory, extend the factory when it lacks a field, and never hand-roll inserts in a spec.** A per-spec `db.insert` is the thing to push back on in review.
+## Fixtures and helpers
 
-**Know what the factory doesn't write.** The `testing/data` factories still write rows directly through `@op/db/test` rather than calling the services, so these gaps between them and their `@op/common` counterparts survived the move, and each one has silently mis-scoped a spec:
+- **No casts in fixtures or helpers** (`as X`, `as unknown as X`, `as never`). A cast hides the contract drift the test exists to catch. Use the file's existing type guard, or add an optional param to the factory. `as const` is not a type assertion; keep it (see `code-conventions`).
+- **Make two sources disagree.** When the test proves which source a value came from, seed the losing source with an obviously wrong value (`stale-<n>@example.test`).
+- **A fixture shortcut keeps production's validation.** Run the encoder or validator, or validate the input before insert.
+- **Helpers throw like production.** A helper that no-ops on an unknown id hides the typo. Reuse the real assertion (`assertInstancePhase` → `NotFoundError`).
+- **Use `randomUUID()` from `node:crypto`**, not `Math.random()`. CodeQL scans test helpers.
+- **Validate a test-only env override** (parse to the expected type) before it reaches a shell command.
 
-| Skipped by the raw insert | Consequence in the test |
-|---|---|
-| Title-derived unique slug (`generateUniqueProfileSlug`) | Slug/URL assertions pin `proposal-<uuid>`, a shape production never emits |
-| Phase-default `visibility: HIDDEN` | Specs patch it back with a follow-up `db.update` "simulating what createProposal does" |
-| `proposalCategories` link rows | A `category` set only inside the `proposalData` JSON is invisible to every read that joins the link table |
-| Location sync + boundary-category derivation | Map, location filter and district tagging find nothing |
-| `parseProposalData` validation, access asserts | The test creates data (and in phases) production would reject |
-| Per-instance `accessRoles` (`createDefaultDecisionRoles`) | The factory attaches the *global* seeded Admin role, so permission resolution takes a different branch and role pickers see zero process roles |
-| `decisionProcessTransitions` | Every "published" instance has no scheduled transitions, which is what the phase monitor reads |
-| `rootProfileId` / `rootPostId` on posts | These are the authorization gate; NULL sends reads down the *legacy* branch, so the spec covers the old auth path, not the current one |
-| Moderation submission rows, notification events, cache invalidation | Anything downstream of content submission never happens |
+## What a test must prove
 
-So: if you're about to write an insert because the factory doesn't cover your case, add it to the factory. If you genuinely must inline a production constant or algorithm in a spec, comment it with what it has to stay in sync with — `packages/common/testing/data` does this (`"Mirrors what createDecisionRole in @op/common writes, without importing it"`), which is what makes the drift findable later.
+- **A regression test fails before the fix, for the bug's reason.** If it passes on the unpatched code, it does not cover the bug.
+- **Assert the module's behaviour, not a Zod schema you passed in.** Ask what code under test would have to break for the case to fail. If none, delete it.
+- **Cover each side of a value-selected branch** (count 1 and 2, below and above a threshold), with values that differ.
+- **Pin a dependency's undocumented shape** that a guard reads (e.g. a `CHANNEL_ERROR` that arrives with no `err`).
+- **Cover a shared derivation at each consumer**, or test it at the shared resolver and assert each surface calls it.
+- **Test the intersection** when a change makes two behaviours coexist, not each half alone.
+- **When you rework query order or hydration**, seed distinct sort keys and a nested relation, and assert both survive.
+- **When you change an endpoint's output**, assert the new field survives the `.output()` parse (see `api-endpoints`).
+- **Cover a boundary the mocks erase** with one integration case: a value two systems format differently (GoTrue stores a phone without `+`, Twilio sends `+`), or provider semantics a test double skips (`@inngest/test` does not run `debounce` or `singleton`).
+- **Test a new request entry point through its real parse path**: raw body in, status code out (valid, missing signature, tampered body, missing secret).
+- **Use a real parser** (`csv-parse/sync`, strict) to read a structured artifact in an assertion. Do not hand-roll one.
+- A comment that says what a test covers must match its assertions.
 
-**Reach for the file's existing type guard before an `as` cast.** When a test needs to narrow a fixture (`proposalData`, an instance's JSON config), the file usually already has the helper — #1789 replaced an `as` cast with the file's own `seedProposalCollab`, which narrows with a type guard. That several neighbouring tests still use the cast is not a justification: *"the pattern I copied was the local convention rather than an oversight"* — the helper is the right target for those too, in their own PR.
+## Access-tier gating (`describeAccessTierGating`)
 
-### A cast in a fixture or a helper hides the drift the test exists to catch
-
-This was the most-repeated finding of the 2026-08-19 → 2026-08-23 window — four PRs, three different spellings, one defect:
-
-| Spelling | Where | What it hid |
-|---|---|---|
-| `as unknown as Proposal` | a merge-flow unit fixture (#1831) | whether the fixture is still structurally valid as the `Proposal` contract changes |
-| `as` onto two unrelated shapes | an e2e spec narrowing `instanceData` (#1845) | fixture/schema mismatches, twice in one file |
-| `as never` | a middleware test's mocked `next` and args (#1861) | the helper becoming incompatible with the production middleware contract |
-| `as` on `proposalData` | a router test (#1789) | the fixture shape, with a type guard already available in the file |
-
-A cast in the *assertion* path costs you an assertion. A cast in a *helper* is worse: it removes the compiler's ability to tell every test using that helper that production moved.
-
-**The fix is almost never to narrow at the call site.** #1845 is the model. The root cause was structural — Drizzle types the `instanceData` jsonb column as `unknown`, and `headline` is an instance-level override with no place in the schema's `PhaseDefinition`, so no typed path existed to seed one from a spec. Rather than cast, the author threaded an optional `phaseHeadlines?: Record<string, string>` param through `createDecisionInstance`. The spec then seeds the value at construction, which deleted both casts *and* the read-modify-write `UPDATE` they supported — 22 lines net removed, existing callers unaffected because the param is optional. Extending the shared factory is the cheaper fix as well as the correct one.
-
-### A fixture that gives both sources the same value cannot tell them apart
-
-When the assertion is about *which* of two sources a value came from, the fixture has to make them disagree. PR #2170 covered the email recipient resolvers against the database and seeded each admin with the same address in `organization_users.email` and in `auth.users.email` — so *"this assertion would pass even if the resolver used the stale snapshot."* The same hole sat on the individual-profile case, where `public.users.email` matched the auth address.
-
-Write the decoy source with a value you would notice: seed the snapshot column with `stale-<n>@example.test` and assert the auth address comes back. The general shape — a test for a precedence rule needs the losing side populated with something wrong, or it only proves that *some* value arrives.
-
-The second half of the same window's fixture findings: **a fixture shortcut that skips production's validation stops being a fixture.** The `TestDecisionsDataManager` custom-schema path in PR #2172 returned early without running the encoder that previously validated and normalized the instance, so a malformed phase definition inserted cleanly and surfaced several operations later as an unrelated failure. Either keep the validation on the shortcut or validate the custom schema before it goes in.
-
-**And test helpers are scanned like product code.** CodeQL flagged `Math.random()` in `packages/common/testing/data/test-data.ts` as insecure randomness and blocked on it (#2172); the helpers use `randomUUID()` from `node:crypto` for ids and slug suffixes. Reach for `randomUUID()` in a fixture rather than arguing the context is only a test — the scanner does not read context, and the fix is shorter than the exemption.
-
-### A derivation shared by two surfaces needs coverage on each
-
-Testing a fallback where you happened to be working leaves the other consumer of the same logic uncovered, and the next change regresses it silently. PR #1838 resolved stale budget / category / location values for both the CSV export and the list preview, but only the CSV path got tests — so "an ambiguous legacy zero preserves the snapshot" and "a nonzero numeric override preserves its existing currency" were pinned for exports and unpinned for the list rows rendering the same values. When a fix touches a shared resolver, list its call sites and assert at each one, or move the test down to the resolver and assert both surfaces call it.
-
-### Assert the function's behaviour, not the schema you handed it
-
-A test that builds input with a Zod schema and then asserts the parsed result is testing Zod. PR #1999 shipped a block of `pagination.test.ts` cases that read as function coverage but only exercised the schema declared at the top of the file — *"it seems like some of these tests are testing the zod schema on line 13. Is that intentional?"*, answered *"They're technically testing the function but I agree there's no point in it."* Before you keep a case, ask what code in the module under test would have to break for it to fail. If the answer is "none," delete it.
-
-### A branch is covered when a test can tell it apart from its neighbour
-
-Singular and plural message branches are the recurring instance: an e2e spec with one stale review out of two, plus a dictionary test that passes `1` for every ICU argument, exercises the singular arm twice and calls it coverage. PR #2054. The general form — when you add a branch that is selected by a *value* (a count, a threshold, a state), the suite needs at least one case on each side of the boundary, and the value has to actually differ between them.
-
-Same reasoning for behaviour that depends on a library's internals: #2081 suppressed a Supabase socket-drop by keying on a `CHANNEL_ERROR` that arrives with no `err`, and neither `CHANNEL_ERROR` case had a test — so a dependency upgrade could restore the noise or start swallowing real join failures with nothing to catch it. When your guard reads an undocumented shape from a dependency, the regression test *is* the documentation of that shape.
-
-### A fully stubbed store cannot catch a format mismatch between two systems
-
-Mocking the database makes a workflow test fast and makes one class of bug invisible: any defect that lives in how two systems spell the same value. PR #2161 stubbed `db` and made `parsePhoneNumber` an identity, so its tests passed over a known-number lookup that could never match — GoTrue stores a phone without the leading `+`, Twilio sends one with it. Review: *"these tests can't catch the phone format mismatch on the known-number query … Could we add a small integration test for the known-number lookup against a real `auth.users` row created through GoTrue? That would have caught the `+` issue."*
-
-The same PR shows the second half of the blind spot: `@inngest/test` does not exercise `debounce` or `singleton`, so a test suite built on it cannot tell you whether a second run was actually suppressed. When a behaviour lives in the boundary — a stored format, a provider's dispatch semantics — cover the boundary itself with one integration case, and keep the mocked suite for the branching logic around it.
-
-### A new request boundary gets tests at the boundary
-
-Testing a signature verifier by handing it a pre-built parameter object skips the part that is actually security-sensitive: parsing the raw form body and choosing between 200, 401 and 503. PR #2159 added handler-level cases for a validly signed callback, a missing signature, a tampered body, a signature from the wrong token, and a missing `TWILIO_AUTH_TOKEN`. When a PR introduces a new externally-reachable entry point, the tests go through the real parse path from the request in.
-
-**And validate a test-only env override before it reaches a shell.** `SUPABASE_AUTH_IDLE_POOL_SIZE` was interpolated straight into a single-quoted Docker command — a quote breaks the command and silently disables pooling, a non-numeric value times out global setup. Parse it as a positive integer first; a harness that fails obscurely costs more than the feature it was speeding up.
-
-## Access-tier gating tests (`describeAccessTierGating`)
-
-PR #1225 added a generic gating matrix for tRPC endpoints in `services/api/src/test/helpers/gating/index.ts`. Use it whenever you add or change the procedure tier of an endpoint.
+Every new tRPC procedure, and every tier change, gets the gating matrix from `services/api/src/test/helpers/gating`:
 
 ```ts
-import { describeAccessTierGating, accessTierGatingCell } from '../../test/helpers/gating';
+import { accessTierGatingCell, describeAccessTierGating } from '../../test/helpers/gating';
 
 describeAccessTierGating('myEndpoint', {
-  noJwt:      accessTierGatingCell('no JWT is rejected at the network tier',  async (ctx) => { ... expectFailsAccessTierGate(..., 'none') ... }),
-  anonJwt:    accessTierGatingCell('anonymous JWT is rejected at the network tier', async (ctx) => { ... expectFailsAccessTierGate(..., 'anon') ... }),
-  userJwt:    accessTierGatingCell('out-of-network user JWT is rejected', async (ctx) => { ... expectFailsAccessTierGate(..., 'user') ... }),
-  networkJwt: accessTierGatingCell('network user is admitted past the gate', async (ctx) => { ... expectPassesAccessTierGate(...) ... }),
+  noJwt: accessTierGatingCell('no JWT is rejected at the network tier', async (ctx) => { /* expectFailsAccessTierGate(…) */ }),
+  anonJwt: accessTierGatingCell('anonymous JWT is rejected', async (ctx) => { /* … */ }),
+  userJwt: accessTierGatingCell('out-of-network user is rejected', async (ctx) => { /* … */ }),
+  networkJwt: accessTierGatingCell('network user passes the gate', async (ctx) => { /* expectPassesAccessTierGate(…) */ }),
 });
 ```
 
-- All four `GatingCells` keys are required — forgetting one is a compile error.
-- `expectFailsAccessTierGate` asserts the gate **rejected** the caller (matches on `cause.callerTier` and the matching 401/403 status code).
-- `expectPassesAccessTierGate` asserts the gate **let the caller through** — the call may still fail later (resource not found, deeper authorization), but not at the tier gate.
+- All four cells are required (compile error otherwise).
+- `expectFailsAccessTierGate` asserts the gate rejected the caller. `expectPassesAccessTierGate` asserts the caller passed the gate; the call can still fail later.
+- `describeDecisionAccessTierGating` (`gating/decision.ts`) is the decision-specific variant. `createGatingCallers` builds the callers.
+- **Add a no-leak test** for an endpoint that filters by visibility: seed a `HIDDEN` record with real data and assert an admitted non-admin sees nothing derived from it.
 
-When you migrate an endpoint down the ladder (e.g. `networkAuthenticatedProcedure` → `authenticatedProcedure`), the gating tests are what prove the deeper authorization still fails closed for out-of-network callers.
+## Playwright
 
-**Add a no-leak test, not just a gating matrix.** Gating proves *who gets past the gate*; it does not prove *what a record that passes the gate reveals*. For any endpoint that filters records by visibility, add a positive no-leak test alongside the gating matrix: seed a HIDDEN record with real data (coordinates, a pin, a private field) and assert a non-admin caller who IS admitted still sees nothing derived from it (PR #1553 review: "a HIDDEN proposal that has coordinates must not leak a pin to a non-admin member … this is the coverage that guards the no-leak invariant"). Valid-but-hidden data is the case that catches a filter that only checks existence, not visibility.
+- **Env shim.** `tests/e2e/playwright.config.ts` overrides `.env.local` with the E2E Supabase on 563xx (`NEXT_PUBLIC_SUPABASE_URL`, `DATABASE_URL`, `S3_ASSET_ROOT`, `E2E=true`, `NODE_ENV=test`, dummy TipTap values). Never hardcode these in a spec.
+- **Supabase ranges:** 543xx dev (`pnpm w:db start`), 553xx Vitest integration (`pnpm test:supabase:start`), 563xx e2e (`pnpm w:e2e supabase:setup`). `ECONNREFUSED 127.0.0.1:56321` means the e2e Supabase is not running.
+- **E2E runs a production build** (`pnpm build:e2e`, then `pnpm e2e`; `pnpm e2e:ui` for one spec). Agents cannot run `build:e2e` (the `pnpm build*` deny); ask the user or rely on CI. Never mark a task done with e2e skipped for "infrastructure issues".
+- **Wait for a signal, never a delay.** No `waitForTimeout`, `sleep` or `setTimeout`. Use auto-retrying assertions (`await expect(locator).toBeVisible()`). Do not wait for `networkidle`.
+- **Select by role or `data-testid`**, never by DOM structure (`.locator('..')`). Add a `data-testid` or a useful `aria-label` to the component.
+- **Shared browser state needs two pages.** A per-origin invariant (`localStorage`, persisted cache) needs a second page in the same context to prove another tab cannot write it back.
 
-## The E2E env shim
+## Vitest
 
-`tests/e2e/playwright.config.ts` `Object.assign`s a fixed set of env vars on top of `.env.local`:
+- Config is per workspace (`packages/common`, `services/api`, `services/realtime`, `apps/app`, …). `globals: true`; match the file's import style.
+- `it.concurrent` is fine for independent cases.
 
-```ts
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:56321
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres
-TIPTAP_SECRET=e2e
-NEXT_PUBLIC_TIPTAP_APP_ID=e2e
-E2E=true
-NODE_ENV=test
-```
+Past review incidents: [references/lessons.md](references/lessons.md).
 
-That guarantees E2E always points at the isolated Supabase instance on ports 563xx, not at your dev stack. Three Supabase ranges to keep straight:
+## Review checklist
 
-| Range | What | Started by |
-|---|---|---|
-| `543xx` | Dev (workspace dev servers) | `pnpm w:db start` |
-| `553xx` | Test | (rare; some workspace test scripts) |
-| `563xx` | E2E | `pnpm w:e2e supabase:setup` |
-
-If a Playwright spec fails with "ECONNREFUSED 127.0.0.1:56321", you haven't booted the e2e Supabase. Run `pnpm w:e2e supabase:setup` once, then re-run.
-
-## E2E builds prod, not dev
-
-The Playwright suite runs against a **pre-built production build**, not the dev server. That's why `pnpm build:e2e` and `pnpm start:e2e` exist (defined at the repo root with `E2E=true` and the 563xx URLs baked in). Don't try to run e2e against `pnpm w:app dev` — the env shim won't match.
-
-The supplied flow:
-
-```bash
-pnpm w:e2e supabase:setup    # boot the isolated Supabase (first time only)
-pnpm build:e2e               # build apps/app + apps/api with E2E env
-pnpm e2e                     # run the specs
-```
-
-`pnpm e2e:ui` opens the Playwright UI runner — useful for debugging a single spec.
-
-## Test helpers mirror production strictness
-
-A test data-manager helper that no-ops on an id it can't find turns a typo into a confusing assertion failure three steps later — the test reads "expected `openReviews: true`, got `false`" and nothing points at the wrong `phaseId`. Have the helper throw the same error production would (`assertInstancePhase` → `NotFoundError`) so the mistake surfaces where it was made. PR #1694: "If `phaseId` doesn't match any entry in the phases array, the `map` returns all phases unchanged and `openReviews` is never written … Consider throwing when the phase isn't found, mirroring how `assertInstancePhase` behaves in production code."
-
-Corollary: a helper is production code with a different caller. Reuse the real assertion rather than reimplementing a looser version of it.
-
-**Don't hand-roll a parser in the assertion path.** A test that reads a CSV (or any structured artifact) with a bespoke reader puts untested code between the artifact and the assertion — if the reader is wrong, the suite passes over a malformed file or fails over a correct one, and either way it blames the code under test. PR #1750 replaced ~48 lines of hand-rolled CSV reading with `csv-parse/sync`; the reviewer's whole comment was "We should include a CSV parser." The "it's only one dependency for one test" instinct is usually wrong when the writer's sibling package is already a dependency — and leaving the parser **strict** (no `relax_column_count`) is the point: a row whose width disagrees with the header now fails the test instead of silently shifting every column.
-
-**Test the intersection, not each half.** When a change makes two behaviours coexist, the case worth pinning is the one where both are live at once. PR #1796 made modals full-screen on mobile and added specs for a short dialog with a footer and an overflowing dialog without one — so the combination that the sticky layout actually has to survive, a tall scrolling dialog with **both** a sticky header and a sticky footer, went untested: "add a tall dialog containing both sticky elements so regressions that obscure, displace, or make the footer unreachable cannot pass this suite."
-
-**`as const` in a fixture is not a type assertion — don't remove it.** Review bots flag `method: 'manual' as const` as a convention violation (PRs #1788, #1797); it isn't, and dropping it widens the literal until it no longer satisfies the union. See `code-conventions` for the distinction and for how to close that thread with evidence.
-
-## Playwright specifics
-
-- **An invariant about shared browser state needs a second page in the spec.** Anything stored per-origin — `localStorage`, a persisted query cache, a service worker — is shared across tabs, so a one-tab spec cannot see a second tab writing the value back. PR #2057's `logout-clears-persisted-cache.spec.ts` is the shape: open the account in two pages of one context, sign out in the first, bring the second to the front, and assert the account never returns to storage. One tab passes on the broken build; two tabs is the test.
-- **Never navigate the DOM structurally to reach an element.** `.locator('..').locator('..').getByRole('button')` encodes the exact nesting depth of a component you don't control — one wrapper `<div>` added by a library upgrade and the chain either misses or silently matches a different button, failing with no useful message. Add a `data-testid` (or an `aria-label` that's worth having anyway) to the element in the component and select on that. PR #1699: "Adding a `data-testid="open-reviews-toggle"` … would make this selector stable and self-documenting without requiring DOM-path knowledge in the test."
-- **A comment describing what a test covers must match its assertions.** A block commented "asserts the name, the recommendation badge, and the score" with only two `expect`s tells the next reader the badge is protected when it isn't — a refactor that drops it passes. Either add the missing assertion or narrow the comment. PR #1699.
-- **Never a hardcoded `sleep` / `setTimeout` / `waitForTimeout` to wait for async state** (e.g. a DB write) to become visible before asserting. A fixed delay is inherently flaky — too short on a loaded CI runner, wasted time on a fast machine. Wait for a concrete signal instead: rely on Playwright's built-in auto-retrying assertions (`expect(locator).toBeVisible()` polls for you), or poll for the actual condition. PR #1639 dropped a raw 600 ms delay after review: "The test would be more reliable waiting for a concrete signal … or simply relying on Playwright's built-in auto-retrying assertions." (Don't reach for `networkidle` as the fix — see the next bullet.)
-- **Don't wait for `networkidle`** — discouraged in the official Playwright docs ([reference](https://playwright.dev/docs/api/class-page#page-wait-for-load-state-option-state)). Use `load` or wait for a specific element / response (review feedback on #1073).
-- Prefer locator-based assertions (`expect(page.getByRole('button', { name: 'Save' })).toBeVisible()`) over CSS selectors.
-
-## Vitest specifics
-
-- Config lives per-workspace (`packages/common/vitest.config.ts`, `services/api/vitest.config.ts`, `services/realtime/vitest.config.ts`). They share the same defaults (Node env, globals on).
-- `globals: true` means you can write `describe` / `it` / `expect` without imports, but explicit `import { describe, it, expect } from "vitest"` is fine too — match the surrounding file.
-- For tests against a real Postgres, use the `services/api/src/test/helpers` factories (`createGatingCallers`, etc.) — they bring up the isolated instance and tear it down via `onTestFinished`.
-- `it.concurrent` is in use for gating cells — fine to adopt where tests are independent.
-
-## Don't
-
-- Don't put `.test.ts` in `tests/e2e/` — Playwright picks up `.spec.ts`; Vitest doesn't look there.
-- Don't bypass the env shim by hardcoding `NEXT_PUBLIC_SUPABASE_URL` in a spec. The whole point is determinism across machines.
-- Don't add a Playwright spec when a unit / integration test would cover the bug. E2E is the most expensive feedback loop in the suite; reserve it for things that genuinely need it.
-- Don't mark a task complete with `pnpm e2e` skipped citing "infrastructure issues" — see `implement-task` Step 7 on STOP signals.
-- Don't ship a new tRPC procedure without `describeAccessTierGating` coverage. Gating is the regression-prone surface; the matrix is cheap.
+- [ ] Right runner and location; suffix matches the Vitest project the test needs
+- [ ] `describe`/`it` names read as sentences
+- [ ] Fixtures come from `@op/common/testing` data managers or factories; no per-spec `db.insert`
+- [ ] No `as` casts in fixtures or helpers; helpers throw like production
+- [ ] Precedence tests seed the losing source with a wrong value
+- [ ] Regression test fails on the unpatched code
+- [ ] Both sides of each new value-selected branch are covered
+- [ ] New or re-tiered tRPC procedure has `describeAccessTierGating`; visibility filters have a no-leak test
+- [ ] No case only exercises a Zod schema
+- [ ] Playwright: no fixed waits or `networkidle`; role/testid selectors; no hardcoded env
+- [ ] `randomUUID()`, not `Math.random()`, in helpers

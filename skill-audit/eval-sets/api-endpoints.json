@@ -1,0 +1,50 @@
+[
+  {
+    "query": "add a new tRPC procedure listArchivedProposals to services/api so the decisions page can fetch archived proposals",
+    "should_trigger": true
+  },
+  {
+    "query": "which procedure tier should a new mutation use if the user must have confirmed their email? authenticatedProcedure or something else",
+    "should_trigger": true
+  },
+  {
+    "query": "add an output encoder to the getDecision endpoint so we stop returning the raw db row",
+    "should_trigger": true
+  },
+  {
+    "query": "we need a webhook route handler for the email provider's bounce notifications in apps/app/api",
+    "should_trigger": true
+  },
+  {
+    "query": "add pagination input to the listMembers trpc query",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new column archivedAt to the proposals table",
+    "should_trigger": false
+  },
+  {
+    "query": "the proposal card is overflowing on mobile, fix the layout",
+    "should_trigger": false
+  },
+  {
+    "query": "write a vitest test for the formatCurrency util",
+    "should_trigger": false
+  },
+  {
+    "query": "add the ability to attach a PDF to a proposal",
+    "should_trigger": true
+  },
+  {
+    "query": "users should be able to upload a banner image for their organization profile, how do we do uploads here",
+    "should_trigger": true
+  },
+  {
+    "query": "is it ok to trust the content-type the browser sends when recording an uploaded file",
+    "should_trigger": true
+  },
+  {
+    "query": "our avatar upload lets 50MB files through, where's the size cap supposed to live",
+    "should_trigger": true
+  }
+]

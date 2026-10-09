@@ -17,6 +17,12 @@
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
+# The command with filesystem paths removed, for the protected-ref checks.
+# A path token starts with `/`, `~/` or `./` (`~/dev/op/common`, `2>/dev/null`);
+# a ref never does (`origin/dev`, `refs/heads/main`), so dropping those tokens
+# stops a directory named `dev` from reading as the branch.
+REFS_ONLY=$(echo "$COMMAND" | sed -E "s#(^|[[:space:]=<>|&;(\"'])(~|\.{1,2})?/[^[:space:]\"';|&)]*#\1#g")
+
 # git or gh invoked at start of line, or after a shell separator (; | & ()
 INVOKES_GIT_GH='(^|[;|&(]\s*)(git|gh)\s'
 
@@ -64,7 +70,7 @@ if echo "$COMMAND" | grep -qE "$DESTRUCTIVE_RESET|$DESTRUCTIVE_CLEAN|$DESTRUCTIV
 fi
 
 # Pushes targeting main/dev are never allowed, even under /release.
-if echo "$COMMAND" | grep -qE 'git\s+push' && echo "$COMMAND" | grep -qE "$REFERENCES_PROTECTED"; then
+if echo "$COMMAND" | grep -qE 'git\s+push' && echo "$REFS_ONLY" | grep -qE "$REFERENCES_PROTECTED"; then
   echo "BLOCKED: pushing to 'main' or 'dev' is never allowed. Open a PR from a feature branch." >&2
   exit 2
 fi
@@ -101,7 +107,7 @@ fi
 
 # Generic protected-branch reference block (catches anything else that names
 # main/dev — e.g. `gh api repos/.../branches/dev`), with /release exception.
-if echo "$COMMAND" | grep -qE "$INVOKES_GIT_GH" && echo "$COMMAND" | grep -qE "$REFERENCES_PROTECTED"; then
+if echo "$COMMAND" | grep -qE "$INVOKES_GIT_GH" && echo "$REFS_ONLY" | grep -qE "$REFERENCES_PROTECTED"; then
   if echo "$COMMAND" | grep -qE "$RELEASE_MARKER"; then
     exit 0
   fi

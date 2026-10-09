@@ -1,0 +1,30 @@
+[
+  {
+    "query": "write a runbook for rotating the supabase service role key",
+    "should_trigger": true
+  },
+  {
+    "query": "draft an ADR for moving file storage from supabase to s3",
+    "should_trigger": true
+  },
+  {
+    "query": "this README is wordy, rewrite it to our documentation standard",
+    "should_trigger": true
+  },
+  {
+    "query": "write the error message shown when a user's invite link has expired",
+    "should_trigger": true
+  },
+  {
+    "query": "write the PR description for my branch",
+    "should_trigger": false
+  },
+  {
+    "query": "add i18n keys for the new settings page",
+    "should_trigger": false
+  },
+  {
+    "query": "fix the broken link in the footer component",
+    "should_trigger": false
+  }
+]

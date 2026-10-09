@@ -1,0 +1,30 @@
+[
+  {
+    "query": "write the PR description for this branch",
+    "should_trigger": true
+  },
+  {
+    "query": "open a draft PR for my changes and fill in the body",
+    "should_trigger": true
+  },
+  {
+    "query": "my PR description is way too long, tighten it up",
+    "should_trigger": true
+  },
+  {
+    "query": "should the PR body include a test plan checklist?",
+    "should_trigger": true
+  },
+  {
+    "query": "rename my branch to follow our naming convention",
+    "should_trigger": false
+  },
+  {
+    "query": "write release notes for the dev to main release",
+    "should_trigger": false
+  },
+  {
+    "query": "write a README section for the new realtime package",
+    "should_trigger": false
+  }
+]

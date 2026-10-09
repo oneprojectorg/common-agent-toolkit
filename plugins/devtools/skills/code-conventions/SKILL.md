@@ -1,534 +1,155 @@
 ---
 name: code-conventions
-description: Cross-cutting code conventions reviewers consistently enforce on this codebase — composition over duplication (when a pattern appears twice, extract; and run fallow check_health before/after so a complexity regression is a number rather than a feeling), naming (no acronyms, get/assert/is prefixes, no "New" for normal cases, consistency over brevity, a generic name must have generic scope or be narrowed, and a qualifier a reader has to guess at is not a name), scope discipline (one task per PR, follow-ups not bundles — disclosing the bundling in the PR body is not a substitute for unbundling, naming the upstream cause when you patch a call site, and an unrequested refactor or a speculative feature flag is its own finding), type escape-hatch avoidance (no Record<string, unknown>, no `as`, no `!`, no `any`), one type guard at the boundary instead of an `as` per property hop, `as const` is a const assertion and NOT a type assertion (don't let a review bot talk you into removing it — rebut with load-bearing evidence and precedent counts), casting at the DB boundary (single cast point, not at consumers), named params for multi-arg functions, prefer existing utilities and the current platform (grep before writing; the toolchain is Node 24, so Set.difference / intersection are available), declaring any package you import in the importing workspace's own package.json rather than riding a transitive copy that a clean install will not hoist, using Common error types (UnauthorizedError / ValidationError / NotFoundError) over raw Error or external library exceptions, validation errors that name the field and blame the right party (never leak an array index as a field name, never reject the user's input for a misconfiguration only an admin can fix) and diagnostics that don't read domain meaning into generic constructs, narrow error catching (catch the one expected error and re-throw the rest, never a broad .catch(() => null)), classifying a transient error by its source rather than its code and dropping the per-request cache a failed attempt read (a retry that replays a memoized rejection recovers nothing), tagged-union returns (an explicit ok-true / ok-false discriminant) over undefined-on-success, fallback discipline (a `??` onto a stale snapshot cannot tell "deliberately cleared" from "not resolved"; a one-shot uniqueness fallback must loop because the name it generates can collide too; never re-case text a person wrote; a shallow spread replaces nested sibling subtrees; fix an invalid stored value at the write, not with a render-side default), explicit String() casts when comparing across a library boundary, resolving or explicitly deferring debt a migration carries over (debug code, dropped guards) rather than porting it in silence, structured logging (the @op/logging logger over console.*, level by severity, never log raw PII — and an error object carries PII in its message, so log error.code rather than the error), splitting a stack by reviewable unit rather than by layer (a PR whose only content is a helper with no caller ships dead code, and re-adding something the repo deleted starts from the deleted commit), comment restraint (comments decay, so the default is none — write one only when the reasoning is not obvious and cannot be made obvious by rewriting the code, then keep it to one short line; a comment recording a decision you made belongs in the PR body, don't carry a charged term in from a neighbouring module, a doc comment you keep must document the symbol and its parameters rather than narrate your change, and when you remove a mechanism the comments describing it are part of the diff), matching the retry unit to the side-effect unit (throwing inside a batched send re-blasts everyone whose batch already succeeded — per-chunk retries, or a counted-and-logged gap; and a completed durable step is replayed rather than re-run, so a precondition for the side effect gets re-read in the step that performs it), guarding a persisted value in the shared helper before it reaches Intl / URL / a date parser, enumerating every arm a guard must cover (both join ends, both graph directions, the set branch AND the clear branch, both halves of a both-or-neither contract, every input that changes the output, the JS check AND the DB constraint, a read and its write sibling, the client's offer AND the server's acceptance) while deleting the branch the guard above made unreachable, not shipping a guard for a failure you have not observed in this repo, picking a CI workflow's trigger by trust level (a pull_request_target job needs the fork-ci environment gate; a job that runs code from the branch belongs in its own pull_request workflow; and the gate only RELEASES a secret — a following pnpm install runs the branch's lifecycle scripts, so install with scripts disabled rather than relocating the credential, and patch all three workflows together), rebutting a wrong review-bot finding with the mechanism rather than with confidence, file-name/export alignment, failing closed on ambiguous input, and validating untrusted redirect paths. Normalize an identifier that crosses two systems once at the parse boundary (GoTrue stores a phone without the `+`, Twilio sends one with it) and reject a missing external id rather than defaulting it into a shared dedup key; a personal identifier is PII in a structured log field, not only inside an error object; a provider result resolved as `rejected` is a failed send that a durable step must act on, not log; a number the deployment can configure is config with a default, not a constant; don't coin a word for something that already has a name; a `workflow_run` publisher must compare the SHA the measured job checked out, not `workflow_run.head_sha`; and shell scripts get the same review as the rest of the tree (a function in an `||` list loses errexit, `git commit -- <dir>` sweeps up unrelated edits). Use whenever writing or refactoring code that will be reviewed — including adding logging or error handling — these patterns cut across api-endpoints, access-control, component-file-structure, and tests.
+description: "Cross-cutting TypeScript rules for oneprojectorg/common: naming (get/assert/is, no acronyms), no as/any/!, Common errors (NotFoundError, ValidationError, UnauthorizedError), fail closed, guard every arm, logging, comments. Use when writing, refactoring or reviewing any code here."
 ---
 
-These are the recurring themes in `oneprojectorg/common` PR reviews. None are domain-specific to a single skill — they apply to every file the agent touches. Skip them at your peril; reviewers will catch them.
+Rules that apply to every file in `oneprojectorg/common`. Common's `CLAUDE.md` is the base layer. This skill adds to it and does not repeat it.
 
-## Scope discipline — one task per PR
+Other owners (link, do not restate):
+- Scope discipline, one task per PR, stacking: `branch-and-pr`.
+- Drizzle query syntax and migrations: `drizzle-migrations`.
+- Cache refresh and channels: `realtime-channels`.
+- UI strings: `i18n-strings`. Components: `component-file-structure`. Styling: `sense-conventions`.
 
-The PR has one job. The job is the Asana task. That's it.
-
-- **Don't bundle adjacent fixes** into the diff. Recurring review: "Is this part of this PR?" — followed by either splitting the PR or moving the extra change to a follow-up.
-- A bug fix doesn't ship a refactor; a refactor doesn't ship a feature. The rare exception is a **trivial** change that genuinely unblocks the work (e.g. a one-line docker-compose tweak) — note it in the PR description.
-- When you see complexity that wants fixing but isn't your task ("this file needs a refactor"), file a follow-up Asana task or open a separate PR. Don't expand scope mid-flight.
-- `/investigate` or `/autoplan` flagging adjacent issues? Open follow-ups; merge the focused fix. PR #1122 / #1208 / #1158 all closed with explicit "follow-up tracked" notes for the bigger refactor reviewers spotted.
-
-### Disclosing the bundling is not a substitute for unbundling
-
-The tempting move — "I'll flag it in the PR body rather than unbundle it" — does not clear the bar. PR #1750 (an export feature) carried a setState-in-render fix, a stale-template-cache fix, and a schema-validator diagnostic fix, all disclosed in the body as *"All four came out of debugging this feature. Flagging rather than unbundling."* The reviewer flagged each one anyway — *"This feels a bit unrelated to this PR … There are a few others like this in the PR that we should watch out for"* — and the outcome was three separate PRs (#1783, #1785, #1786). The disclosure bought nothing except a wider diff that no longer matched its title.
-
-**This is the failure mode agents are most prone to**, and the reason is structural: an agent driving one task fixes whatever blocks it, because deferring means a new branch and another review cycle for something it has already diagnosed. Every bundled change in #1750 was hit *en route* to exercising the feature — you can't export proposals without first creating a decision, a proposal, and a rubric.
-
-So when you fix something you tripped over rather than something you set out to fix:
-
-- **Split it out as you go**, on its own branch off `dev`, while the change is small and independently revertible — which is exactly what makes extraction cheap and what makes leaving it in look lazy.
-- The exception is genuinely trivial and genuinely load-bearing for the work: a one-line docker-compose tweak without which nothing runs. "It was broken and I knew how to fix it" is not that.
-- If you truly can't unbundle, the PR body has to say which commit carries it and why extraction was rejected — not just that bundling happened.
-
-### A refactor nobody asked for is its own finding
-
-Bundling is usually framed as *an extra fix*, but the version reviewers catch most often on agent diffs is an extra **rewrite** — the task worked, and the surrounding code got reshaped on the way past. PR #1909: *"This is a refactor I did not ask for. Review with the LLM why we made this change."* The remedy the reviewer asked for is the right one generally: go back and articulate what the change bought. If the answer is "it reads better to me," revert it.
-
-The same instinct catches speculative configuration. PR #1930 added a feature flag alongside a phone sign-in UI and drew both *"Is this duplicated? Why are we adding the featureFlag."* and, a few days later, *"Lets unwind this change and only feature the UI."* A flag is a permanent branch in every code path it touches plus a removal task nobody schedules; gate the surface that has to be hidden and nothing else. Read this together with *a guard for a failure you have not observed here* below — a flag for a rollout nobody has planned is the same speculative complexity in configuration form.
-
-### Splitting a stack is not the same as splitting out dead code
-
-Unbundling is the rule above; its mirror is that a PR still needs a reason to exist on its own, and "it's one layer of the stack" isn't one. A PR whose entire content is a helper with **no caller until the top of the stack** ships code that nothing runs, and this codebase has already deleted that exact helper once for that exact reason — `isServerFeatureEnabled` was removed in `fbbc240ae` as unused, then a later stack proposed re-adding a worse version of it (no cache, a bare boolean where three states are needed, a silent catch). PR #2113 was folded back into the PR that calls it (#2116), and the restored implementation came from the deleted commit rather than being rewritten.
-
-Two things to take from that. **Split by reviewable unit, not by layer** — five PRs each of which does something observable beats five that each add a tier. And **when you are re-adding something the repo deleted, start from the deleted commit**: git has the version that survived review, including the cache, the tagged-union return and the logging your fresh rewrite will omit.
-
-### Fix the cause, or say plainly that you didn't
-
-When the honest fix is upstream and you patch the call site instead, name the upstream cause in the code comment and file it. PR #1750 patched a `Template with ID '<uuid>' not found` failure by switching a cached `ensureData` to a revalidating `fetch`; the reviewer's instinct went straight past it — *"I wonder if it matters much since they won't change but we might get new ones. Or if the problem is further up where we query by name instead of id."* It was: the seed dedupes templates on **name** while regenerating the **id**, so a logically identical row gets a new id on every seed. The call-site fix is defensible (a data-layer identity change is out of scope for a feature PR); the silence about it would not have been.
-
-## Composition over duplication
-
-Single most common review-rejection theme.
-
-- First copy: fine.
-- Second copy: a flag. Comment explaining why duplication is the right call, or extract.
-- Third copy: merge-blocker. Reviewers will ask to extract before approval.
-
-The patterns reviewers cite most:
-
-- Two list components with 80% overlap (`ManualSelectionList` / `ReviewSelectionList`) → one composable list fed by data.
-- Two header components diverging by a flag → split by composition (pass `children`), not by adding the flag.
-- Two procedures crammed in one file with branching → split into separate procedures.
-- The same util inlined in three call sites → extract to `services/<feature>/utils.ts` or a domain-level helper.
-
-When you compose with **`children` and slot props**, beware: arrays of slots (`headerSlot`, `footerSlot`, `actionsSlot`) with logic branches usually mean the composition should be inverted. Let the parent assemble the layout; the child just renders.
-
-### The threshold is measurable — run `fallow check_health` on what you changed
-
-"This is getting complex" is usually a feeling, and reviewers state it as one: PR #1819 drew *"Looks good but I think we are really starting to build up cruft with our props here … We are prop drilling quite a bit and just growing the prop list. This is building up over time so now flagging it as crossing a kind of threshold here."* The same review then made it a number, by running `fallow check_health` (thresholds: cyclomatic 20, cognitive 15) over the `origin/dev` and branch versions of the touched files:
-
-| Function | cyclomatic | cognitive | status |
-|---|---|---|---|
-| `EditProposalPageContent` | 17 → **27** | 12 → **22** | newly over both |
-| `ProposalView` | 23 → **34** | 17 → **28** | already over, ~50% worse |
-
-Both regressions traced to one shape landing twice — a three-way nested ternary plus a toggle — which is the *no nested ternaries* rule below, caught by measurement rather than by taste. Run the before/after yourself on any file you grew (`implement-task` already gates on `fallow`), and when a function crosses, split it in the same PR rather than shipping the number and a note. The prop-list half of that review belongs to `component-file-structure` (*a ballooning prop list is a decomposition smell*); the point here is that you can find out before the reviewer does.
+Past review incidents, one line each: [references/lessons.md](references/lessons.md).
 
 ## Naming
 
-### Function name signals intent
-
 | Prefix | Means | Example |
 |---|---|---|
-| `get*` | Returns a value, pure-ish | `getProposalsForPhase`, `getReviewsGroupedByRecommendation` |
-| `list*` | Returns a paginated / multi-result query | `listProposals`, `listAllProposals` |
-| `create*` / `update*` / `delete*` | Mutation | `createProposal`, `updateOrganization` |
-| `assert*` | Throws on failure, may return the loaded value | `assertProfileAccess`, `assertInstancePhase` |
-| `is*` / `has*` / `can*` | Boolean | `isAdmin`, `hasPermission`, `canEdit` |
-| `resolve*` | Computes / disambiguates a value | `resolveAccessUserIds`, `resolvePhaseWindow` |
+| `get*` | Returns a value | `getReviewsGroupedByRecommendation` |
+| `list*` | Paginated or multi-row read | `listProposals` |
+| `create*` / `update*` / `delete*` | Mutation | `createProposal` |
+| `assert*` | Throws on failure, can return the loaded value | `assertProfileAccess` |
+| `is*` / `has*` / `can*` | Boolean | `isAdmin`, `canEdit` |
+| `resolve*` | Computes or disambiguates a value | `resolvePhaseWindow` |
 
-A bare `proposalsForPhase()` is ambiguous — does it mutate? does it return? Reviewer feedback: "I tend to strongly prefer these phrased more as `getReviewsGroupedByRecommendation()`. It's a bit clearer and signals there definitely is a return value here."
+- Write the word: `authorization` not `authz`, `organization` not `org`, `response` not `res`, `description` not `desc`. The only single letters are `i`/`j` for a loop index and `t` for translation.
+- Use the vocabulary the neighbouring code uses (`isLoading`, not a new `isBusy`). Code you move inherits no excuse for an odd name.
+- Name by meaning, not by location: `heroImage`, not `backgroundImage`. One concept gets one name everywhere.
+- A generic name promises a generic scope. Widen the shape to match the name, or narrow the name to match the shape.
+- Do not coin words (`rail`) or use qualifiers a reader must guess at (`foreign`, `raw`, `real`). Use the word the UI and the team use.
+- The current behaviour is unprefixed: `DecisionHeader` and `LegacyDecisionHeader`, never `NewDecisionHeader`.
+- Destructure-local names (`rest`, `others`) do not survive past the spread. Rename: `const { config, ...savedFieldsWithoutConfig } = savedFields`.
+- Domain names over generic ones: `ProposalReviewCard`, not `Item` or `Card`. Exception: `@op/sense` primitives.
+- A file's name matches its primary export.
+- Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
 
-### No acronyms or abbreviations
+## Types
 
-Write the word.
-
-- `authorization`, not `authz` (PR #1257 review: "let's just use the few extra characters to make this shortening clear")
-- `description`, not `desc`
-- `organization`, not `org` (variable names — directory names like `org/` are fine)
-- `AccessTier`, not just `Tier` (PR #1225 review: "Keeping it consistent means it's easier to grep generally")
-- `response`, not `res` — even in tight loops
-- The ONLY acceptable single-letter names are the universal conventions: `i` / `j` as a loop index and `t` as the translation function. Don't alias your own helpers to a single letter — no `h()` for a `createElement`-style shortcut. PR #1405 review: "we don't need to make this harder to read and reason about by calling it h() ... We always prefer longer names unless it is REALLY a common shortening (like `t()` or `i` in a loop)."
-
-### Consistency over brevity
-
-- `maxVotesPerMember` over `maxVotes` — leaves naming room for `maxVotesPerOrganization`, `maxVotesPerProposal` later.
-- `addedByProfileUserId` over `addedById` — matches neighboring columns in the schema.
-- Don't shorten a name just because it appears in two places — repeated long names are easier to search than synonyms.
-- Match the vocabulary the neighbouring code already uses for a recurring state. PR #2073 on `isBusy`: *"isBusy feels like an odd naming. Usually we have isLoading or something like this. I would look elsewhere in the codebase for some patterns. If it was here before it could also just need to be updated."* Note the second half — inheriting the odd name from the code you moved is not a defence, the move is when it gets fixed.
-
-### Name by meaning, not by location
-
-Name a property for what it *is*, not for the one place it's currently rendered. A field displayed as a background today will appear in headers, cards, and previews tomorrow — a location-based name goes stale the moment a second use site lands. PR #1480 review on an image field named `backgroundImage`: "backgroundImage is an odd naming since it's not the background of the decision and will be displayed in many more places than a background. Maybe heroImage or headerImage is a better bet." Resolution: renamed to `heroImage` across schema / encoders / services / hooks.
-
-Corollary: don't mix multiple terms for one concept. Juggling `Banner` vs `OverviewImage` vs `backgroundImage` for the same field is a smell — pick one semantic name for the backend property and use it everywhere.
-
-### A generic name promises a generic scope — deliver it or narrow the name
-
-A broad name over a narrow value reads as an abstraction the reader can extend, and then the next contributor puts a second thing in it and finds the type won't hold it. PR #1817 on a `visibility` prop populated only by `getProposalReviewVisibility`: *"There is a strange disconnect here in the naming in that it's about visibility but it only gets populated by something called getProposalReviewVisibility. It seems like it should be defining visibility for many things as it seems quite generic, but only accepts visibility around proposal reviews … I think it's preferable that it's simply `ProposalVisibility` or `ProposalFeatureVisibility` and that it includes review visibility and maybe for now it's only populated by that."*
-
-Both resolutions are legitimate — widen the shape to match the name, or narrow the name to match the shape. What is not legitimate is leaving a name that describes a thing the code doesn't do yet.
-
-**A name that describes a state the row isn't in yet is the same defect.** PR #1856 on `getLinkedProposal`: *"this `proposal` doesn't have anything linked yet, right? Maybe we just name `getLinkedProposal` something more explicit."*
-
-**And a qualifier a reader has to guess at is not a name.** PR #1883: *"What's foreign mean here?"* — the word carried a distinction the author held in their head. If a modifier (`foreign`, `external`, `raw`, `real`) needs the surrounding paragraph to land, say what it actually distinguishes.
-
-**Don't coin a word for a thing that already has a name.** PR #2164 shipped "rail" for the proposal tab bar — through the component, its helpers and the e2e spec. The review was one question, *"What does rail mean?"*, and the answer was *"my coinage, sorry."* A term nobody else uses costs every later reader a lookup and makes the code unsearchable from the UI it renders. Use the word the screen, the designs and the team already use; if the thing genuinely has no name, pick the plainest description rather than a metaphor.
-
-### Keep the file name and its primary export aligned
-
-A file's name should match its main export — name the file after the function or the function after the file, not two different things. PR #1580 review on `addRelationship.ts`: "We should either name the file after the function or name the function after the file." Mismatched names make a symbol hard to locate from its file and vice versa.
-
-### Don't prefix the normal case
-
-The current behavior is unprefixed. Only legacy gets the modifier.
-
-- ✅ `DecisionHeader` and `LegacyDecisionHeader`
-- ❌ `NewDecisionHeader` and `DecisionHeader`
-
-PR #1145 review: "We should never call these 'New'. This is the normal case whereas Legacy is an old case."
-
-### Don't keep destructure-local names in the outer scope
-
-A name like `rest`, `others`, `props` is meaningful inside the spread that produced it — but the moment that variable is used three lines later, it's a black box. Recurring review (PR #1293): "usage of the variable name 'rest' is really local to this spread.. beyond this line it's not really descriptive. We should give them better variable names."
-
-```ts
-// ❌ `rest` reads as "the leftovers from this destructure" — useless 10 lines later.
-const { config, ...rest } = savedFields;
-persist(rest);
-
-// ✅ Name it for what it actually is.
-const { config, ...savedFieldsWithoutConfig } = savedFields;
-persist(savedFieldsWithoutConfig);
-```
-
-Same rule for anonymous map callbacks (`(p) => …`) where the variable escapes the immediate scope.
-
-### Domain-specific over generic
-
-Names should carry domain meaning. `Item`, `Row`, `Card` (alone) are red flags in component / function names.
-
-- ✅ `ProposalReviewCard`, `BallotEntryRow`, `CollectionItem`
-- ❌ `Item`, `Card`, `Box`, `Container`
-
-Exception: truly-generic primitives in `@op/sense` (`<Card>`, `<Button>`) — those are the leaves and earn the generic name.
-
-## Type discipline
-
-### No escape hatches
-
-| Bad | Fix |
+| Do not | Do |
 |---|---|
-| `as Foo` | Type guard, refined input, or a Zod parse at the boundary |
-| `any` | `unknown` + narrowing |
-| `Record<string, unknown>` for JSON columns | Zod schema for the column, narrowed once at the service layer |
-| `!` non-null assertion | Guard with `if (!x) throw …` or restructure so it's never optional |
-
-Recurring review on JSON: "I feel like this `Record<string, unknown>` is really seeping into our code a lot and I don't think it's necessary that it's unknown. The JSON type in the database wasn't meant to be untyped as much as it is meant to simply not be typed at the database level."
-
-- **Fix the *source* type, not each consumer.** When a hook returns a ref, type it as `RefCallback<T>` (or the exact `RefObject<T>`) so call sites put the ref straight on the element — delete the `as React.RefObject<HTMLDivElement>` casts rather than papering over ref typing at every use site. PR #1558 self-review: the hook now returns a properly typed `RefCallback<T>`, so every `as React.RefObject<HTMLDivElement>` cast at the call sites is deleted and the ref goes straight onto the element.
-- **One type guard at the boundary beats an `as` per access.** Traversing an untyped structure (a React Query cache entry, a parsed JSON blob) tends to grow one assertion per property hop. Write a single narrowing predicate — `const isRecord = (value: unknown): value is Record<string, unknown> => …` — and bind the leaf behind a `typeof` check, so future shape changes stay compiler-checked. PR #1770 replaced four object assertions with one `isRecord`, leaving no `as` in the file besides `as const`. **Take the tests with it**: the same PR dropped seven `as ReturnType<typeof …>` casts and asserted the whole returned shape instead, which tightened three tests that had been silently ignoring a second row.
-
-### `as const` is not a type assertion — don't "fix" it
-
-`as Foo` suppresses a check; `as const` **narrows** a literal instead of widening it to `string`. They share a keyword and nothing else. Review bots conflate them — Greptile flagged `method: 'manual' as const` in an e2e fixture as a convention violation in #1788 and again in #1797 — but the rule targets suppression casts, and removing the const assertion would widen the literal until it no longer satisfies a `'date' | 'manual'` union.
-
-The wider lesson is how that thread was closed, because it's the model for any convention flag you think is wrong:
-
-- **Name the distinction** — const assertion vs suppression cast — rather than asserting "this one's fine."
-- **Show it's load-bearing** — drop it and the type no longer checks.
-- **Count the precedent** — `as const` appeared 32 times across `tests/e2e`, four of them already on `dev` in the same file, so changing 2 of 32 would make the suite *less* consistent.
-- **Concede the good half separately.** The reviewer's underlying suggestion (annotate the fixture with the process-schema type so the literals are contextually typed) was a real improvement — acknowledged, and deferred to its own PR rather than folded into a feature branch.
-
-Greptile accepted the correction outright. A bot finding is evidence, not a verdict; a documented rebuttal is a valid resolution and cheaper than a wrong change.
-
-### Rebut with the mechanism, not with confidence
-
-Roughly one bot finding in six is wrong, and they cluster in the convention-checking class rather than in correctness. The rebuttals that land explain *why the mechanism can't produce the claimed failure*. PR #1805 was flagged P1 for "memoized rows retain stale translations"; the reply that closed it named the data path — *"translations reach the card through React context (`ProposalCardView` → `useCardTranslation` → `useContext`), and context updates re-render subscribers regardless of a memoized ancestor — `React.memo` on `MapListRow` only blocks prop-driven re-renders"* — and the bot retracted: "My comment was wrong."
-
-Applies in both directions. When a finding is right but its framing is wrong, concede the finding and correct the framing: #1789's `as`-cast flag was valid and fixed by switching to the file's existing `seedProposalCollab` type guard, with the note that several pre-existing tests in the same file still use the cast, so the pattern was the local convention rather than an oversight. And when a finding is right but out of scope, say which follow-up carries it (#1824: *"Taken in a follow-up PR (this is under a feature flag)"*) rather than arguing it away.
-
-### Cast at the boundary, not at the consumer
-
-Cast as **close to the DB query as possible** — a single cast point where untyped data enters the typed system. Then downstream code is strictly typed.
-
-```ts
-// ✅ Cast once in the service / schema layer
-const instance = await getInstance(id); // returns Instance with typed instanceData
-
-// ❌ Cast at every consumer
-const rubric = (instance.instanceData as InstanceData).rubricTemplate;
-```
-
-When the inferred Drizzle type isn't precise enough, narrow it once with a Zod schema in `services/<feature>/schemas.ts` or with a typed wrapper on the table reference. Don't propagate the cast.
-
-### Cast explicitly when comparing across a library boundary
-
-When a third-party runtime type is wider than what you actually pass (dnd-kit ids typed `string | number`, for example), cast explicitly at the comparison point — `String(a) === String(b)` — rather than trusting the implicit runtime contract. A strict `===` between a stringified value and an untyped-but-numeric library value is always `false` when a number slips through, so an index lookup returns `-1` and downstream logic (`arrayMove`) silently corrupts data with no error. PR #1624 fixed a `findIndex` mismatch with `String(active.id) === String(over.id)`.
-
-## Return a tagged union for success/failure, not undefined-on-success
-
-**And when the outcome has more than two cases, name them as a string union rather than a bag of booleans.** PR #1851 on an export-retry result: *"This could be simplified as an enum or string perhaps. wdyt? `'recovered' | 'record-gone' | etc...`"* Two independent booleans describe four states when only three exist; a union makes the impossible one unrepresentable and gives every branch a name that shows up in a log line.
-
-A function or hook that can succeed or fail validation returns an explicit discriminated union — `{ ok: true } | { ok: false; errors }` — never `undefined` on success with error data on failure. An ambiguous return makes it trivial for a caller to invoke it without capturing the result and silently drop the errors (no feedback shown). The codebase already does this (`useClaimAccount`) — follow it. PR #1624: "`nextStep` returns undefined on success and fieldErrors on failure … An explicit shape like `{ ok: true } | { ok: false; errors }` (or throwing) makes this impossible to miss."
-
-### API types from `@op/api/encoders`, never `RouterOutput`
-
-Already covered in `api-endpoints` and `component-file-structure` skills. Re-stating because it's recurrent: `RouterOutput['x']['y']` couples callers to the router shape; encoder `z.infer` types are the source of truth.
-
-## URL host checks — compare the exact host, never a substring
-
-Never authorize or route an external request by checking whether a token appears *inside* a URL (`url.includes('openl-translate.p.rapidapi.com')`). Arbitrary hosts can sit before or after the token (`evil.com/?x=openl-translate.p.rapidapi.com`, `openl-translate.p.rapidapi.com.evil.com`), so the substring passes but the request goes somewhere unintended. CodeQL flags this as "Incomplete URL substring sanitization" and it will block the merge. Pin the host as a constant and compare it exactly — parse with `new URL(x)` and check `url.hostname === EXPECTED_HOST`. PR #1523 review (CodeQL): "'openl-translate.p.rapidapi.com' can be anywhere in the URL, and arbitrary hosts may come before or after it."
-
-## A guard covers every arm of the thing it guards
-
-Over the 2026-08-16 → 2026-08-20 review window, six of the ten P1 findings were one shape: **a rule enforced on one side of something symmetric.** This is the single highest-yield thing to check before pushing, because the half you didn't write is invisible in your own diff — the code reads as complete.
-
-The arms that got missed:
-
-- **Both ends of a join.** A visibility predicate on the far-end proposal but not the pinned one, then the reverse (#1789 — see the `access-control` skill).
-- **Both directions of a graph invariant.** `mergeProposals` asked only whether the *target* had an outgoing merge edge, so merging A into B and then B into C both succeeded and built the chain the guard existed to prevent. The fix checks both directions in one `Promise.all` — `findLiveMergedEdge` (does the target have an outgoing edge) plus `hasLiveMergedSources` (does anything point at the source) — which is what lets every consumer treat "has a live merged edge" as the whole answer instead of walking a chain (#1789).
-- **Both branches of a write.** An effect that sets an inline style needs the `else` that clears it; skipping the assignment is not the same as removing the value a previous run wrote (#1813).
-- **Both halves of a both-or-neither contract.** A capability gate that enabled async moderation review without requiring `reportForReview`, while the caller silently skipped the missing method (#1836).
-- **Every input that changes the output.** A query subscribed to `reviewAssignments` while phase transitions — which change the same result — publish on `decisionInstance` (#1815; see `realtime-channels`).
-- **Both the JS check and the DB constraint.** Two unlocked checks can both pass before either insert when the unique index covers fewer columns than the predicate did (#1789; see `service-layer-structure`).
-
-The 2026-08-20 → 2026-08-23 window added two more arms to the same list, so treat it as an open set rather than a checklist:
-
-- **Both siblings of a read/write pair.** `assignPhaseReviews` skipped the `assertInstancePhase` its read sibling calls, so an arbitrary `phaseId` got through on a legacy instance and created assignment rows stamped with a phase no phase-scoped query can surface. The tell was in the error types: the same bad input was a `NotFoundError` on the read and a `ValidationError` on the write (#1848; see `service-layer-structure`).
-- **Both the client's "can I offer this?" and the server's "will I accept this?".** The proposal admin menu offered the merge flow whenever the proposal had no *outgoing* merge edge, while the service also rejects a proposal with *incoming* merges — so an administrator could complete both dialog steps and have every confirmation rejected (#1831; see `component-file-structure`).
-
-So when you write a guard, a filter, a predicate or a subscription, enumerate the arms out loud before moving on: which ends, which directions, which branches, which inputs, which layers, which side of the wire. If you can only name one, that's the finding.
-
-### The mirror image: delete the branch the guard above made unreachable
-
-Enumerating arms adds code; the same pass should remove the arms that can no longer fire. Once a check rejects every id outside the phase pool, and pooled ids are in-instance by construction, the later "no selected proposals" branch cannot execute — it reads as a live case and costs the next reader the same reasoning you just did (#1848). This does not contradict the *log the impossible branch* rule in `service-layer-structure`: log when a case is merely believed unreachable and a caller could still produce it; delete when the guard immediately above makes it unreachable by construction. Say which one you concluded.
-
-## A guard for a failure you have not observed here is a guess, not a change
-
-Adding defensive infrastructure for a problem nobody has hit in this repo is a recurring agent failure mode, and reviewers read it exactly that way. PR #1750 carried a Redis preflight script — reviewer: *"Was this a real problem you run into or is this something that Claude was just suggesting as a whole to fill? If the latter I say let's not have it in this PR because we haven't run into this at all before"* — and a `turbopack.root` pin in both `next.config.mjs` files whose whole justification was a lockfile *above* the monorepo, which is machine-specific and can't be determined from the repo (*"not sure if this is required … Is this a legit issue? curious because we haven't run into it before"*).
-
-The bar: name the failure you saw, or don't ship the guard.
-
-- **You reproduced it here** → keep it, and say in the PR body what failed and how you triggered it.
-- **It's environment-specific and you hit it on your machine** → that's a local-dev fix travelling with feature work. It belongs in its own PR (see scope discipline above), and the body has to name the machine-local condition, because the next reader can't reproduce it from the repo.
-- **The model suggested it and it sounds prudent** → delete it. Prudence with no observed failure is speculative complexity, and it costs a reviewer the time to work out that there's nothing behind it.
-
-Same test applies to defensive `IF NOT EXISTS` guards in migrations (see `drizzle-migrations`) and broad `try` / `catch` around calls that haven't been seen to throw.
-
-## Fix the encoding, not the symptom
-
-When an input can be misinterpreted, make the representation unambiguous at the source rather than adding a guard that patches the bad case downstream. PR #1540 self-review: array elements were re-keyed `field[index]` instead of `field:index` so a numeric-string id can never be parsed as an array index — "make the encoding unambiguous instead of guarding the symptom." A guard leaves the ambiguity live for the next caller; an unambiguous encoding removes the failure class.
-
-The same question gets asked about display fallbacks: if the renderer needs a fallback because a bad value can be *stored*, the fix is usually the write. PR #1845 shipped default copy for a headline cleared to `''`; the review asked *"Do you think we can make the fix upstream, API/data layer? As in, don't allow setting the headline to an empty value"* — and that was the accepted answer. Reach for the render-side fallback only when the invalid value is already in the data and you can't migrate it.
-
-### A `??` fallback can't tell "not resolved" from "deliberately cleared"
-
-`current ?? previous` reads as "prefer the fresh value," but an author clearing a field produces exactly the same absent value as a resolution that didn't run — so the stale one wins and the cleared field comes back. PR #1843: clearing a single-select category produced no override on the current document, the export fell through to the older `proposalData` value, and the CSV shipped a category the proposal no longer has. PR #1838 is the same shape one layer down — a legacy `0` that means "unknown" is indistinguishable from a real zero budget.
-
-Make the three states distinguishable before you write the fallback: **resolved to a value**, **resolved to empty**, and **not resolved**. That usually means the resolver returns a tagged result (see *Return a tagged union* above) rather than `T | undefined`, so `undefined` stops carrying two meanings.
-
-### A uniqueness fallback has to loop — the name it generates can collide too
-
-One-shot disambiguation (`if (used.has(name)) name = \`${name} (${key})\``) assumes the generated form is unique, which it isn't: a second field whose literal title already equals that generated string collides right past the guard. PR #1847 shipped duplicate CSV headers this way, and header-keyed readers silently overwrote one field's column. The fix is a `while`:
-
-```ts
-let header = column.header;
-while (usedHeaders.has(header)) {
-  header = `${header} (${column.key})`;
-}
-usedHeaders.add(header);
-```
-
-### Don't re-case text a person wrote
-
-Capitalizing a title, a category label, or a field name is a content decision, not a formatting one — lowercase is frequently deliberate, for political or aesthetic reasons, and a `toUpperCase()` on the first letter overrides the author silently. PR #1847 review: *"Curious if this will capitalize things that people have intentionally uncapitalized (thinking of many choices around that both political and aesthetic)."* Worth noting where the bug actually was: the author's own title passed through untouched, and it was the **no-title fallback** that capitalized the field *key*. A machine-derived fallback doesn't need a casing decision either — render the key as it is, and let the schema carry display copy if one is wanted.
-
-### A shallow merge replaces sibling subtrees, it doesn't blend them
-
-`{ ...existing, ...patch }` is one level deep. Any key whose value is itself an object is wholly replaced by the patch's version, so a patch carrying a partial nested object silently drops every sibling key inside it. PR #1845 review on a headline patch helper: *"These are shallow merges; let's make sure nothing unintended is overridden."* Either patch at the leaf you actually own, or spell out the nested merge — don't spread two config objects and hope.
-
-## An identifier that crosses two systems is normalized once, at the parse boundary
-
-Two systems that both hold "the phone number" rarely hold the same string. GoTrue stores it without the leading `+`; Twilio's `From` always carries one. PR #2161 compared them directly, so the known-number lookup could never match: an existing user who texted in was asked to sign up, and their confirmation then failed in `createUser` as a duplicate. Review: *"Could we strip the `+` before comparing … or normalize it once in `parseTwilioInboundMessage` so everything downstream agrees."* Prefer the second — a `.replace()` at the comparison fixes one call site, normalizing in the parser fixes the ones nobody has written yet.
-
-The tell is an equality check between a value you received and a value you stored, where the two arrived through different doors. Ask what each side's canonical form is before writing the `eq(...)`.
-
-**And don't default a missing external identifier.** The same PR read `MessageSid ?? ''`, so a delivery without a sid produced the event id `sms-inbound-` and every other sid-less message deduplicated against it. Review: *"Should we reject an empty sid here (or 400 in the webhook) rather than defaulting it?"* An identifier you cannot tell apart is not a fallback, it is a collision — reject it at the boundary.
-
-## Function parameter shape
-
-- **All-named for multi-arg functions.** Mixing one positional + one named-object is the most common review-rejection on service signatures. PR #1245 review: "more about the parameter shape since it is mixing named params with ordered params. When that happens I switch to all named params."
-  - ✅ `assertProfileAccess({ user, profileId, permissions })`
-  - ❌ `assertProfileAccess(user, { profileId, permissions })`
-- A single-arg function can stay positional (`getCurrentProfileId(authUserId)`).
-- Be deliberate about which type goes into the param. `user: User` carries type safety; `user: { id: string }` will compile against any object with an `id`. PR #1245 review: "We probably want the User type here as well since we could inadvertently pass the wrong 'user' type here."
-
-## Control flow — no nested ternaries
-
-A single ternary for an obvious binary choice is fine. Stack two or more and reviewers will push back. PR #1332 review: "Not usually a fan of these nesting ternaries. we should try to avoid them generally."
-
-Three approved rewrites in roughly increasing order of cost:
-
-1. **Pull the choice into a named variable with `if` / `else`**, then return once. PR #1332 follow-up: "Picks the body via if/else into one variable, then a single guard + return."
-2. **Split the branches into sibling components** when each branch carries non-trivial JSX or its own props. PR #1317: "small thing, can we split these three into components so we don't have a big 'ol if statement in the function. this way we can easily see the branching and can isolate each component's dependencies — even a good use-case for a `match()`!" Resolved with a thin dispatcher + one component per treatment (`CompletedPhaseCard` / `CurrentPhaseCard` / `AdvanceablePhaseCard` / `UpcomingPhaseCard`).
-3. **Use `ts-pattern`'s `match()`** when the choice is a discriminated union — the type narrowing falls out for free.
-
-Inverse principle: don't add a flag prop (`isAdmin?`, `variant?`) to a component just to fork its render. Compose at the call site.
-
-## Derive lists from the source of truth, don't hardcode
-
-When the same list already exists somewhere (locales, slugs, entity types, env names), import it — don't re-type it. PR #1387 review: "We should probably create this from our locale list instead rather than hardcoding." A duplicated list is a source of skew, not a documentation aid; the moment a locale is added the hardcoded copy is wrong.
-
-If the source is exported from a different package and importing it would pull in a heavy graph, factor the list into a small standalone module that both can import. Don't keep the duplicate "just for now."
-
-## Magic numbers and inline strings
-
-- Extract numeric constants when the meaning isn't obvious. `86_400_000` → `MILLISECONDS_PER_DAY` (or reach for `date-fns`).
-- Domain strings (`'yes'`, `'no'`, `'pending'`) that cross a boundary should be enum-backed or use a Zod literal union.
-- **A number the deployment can change is configuration, not a constant.** Supabase's OTP length is project-configurable — a hosted project can default to 8, and a local `supabase/*.toml` cannot set it — so the fixed 6-slot `InputOTP` in PR #2073 would have stranded every code screen on such a project. The shape to copy: `AUTH_OTP_LENGTH` in `packages/core` reading `NEXT_PUBLIC_AUTH_OTP_LENGTH` with a 6 default, and the validator checking against *that* instead of a hardcoded range. Then grep for the assumption's other copies — the same PR carried a `"6-digit code"` label that was wrong at any other length.
-- Don't hardcode UI strings — see the `i18n-strings` skill.
-
-## Comments — only where necessary, then keep them short
-
-Comments decay so only include them when it is necessary and not obvious from the code. The code around a comment keeps changing and the comment doesn't, so every comment is a claim that will potentially be false in the future while still reading as true — and a confidently wrong comment costs more than no comment. Code that needs a comment to be understood is usually code that should be renamed or split instead. Do that first; the comment stops being necessary in a lot of cases.
-
-A comment earns its place in one case: **the reasoning is not obvious from the code and cannot be made obvious by writing the code differently.** That is a narrow set:
-
-- **Why**, not what: the reason for a non-obvious choice, a workaround, or an ordering constraint — including the option that looks right and was rejected.
-- A constraint that lives outside the file (an upstream bug, a provider quirk, a spec requirement).
-- A warning about a real footgun at a call site.
-
-Reasoning is the one thing that survives a refactor, which is why it's the one thing worth writing down. Anything describing *what the code does* is the part that decays first.
-
-When you do write one, write the shortest form that carries the information:
-
-- One line where one line works. No preamble, no restating the signature, no "This function ...".
-- No decorative banners, section dividers, or commented-out code.
-- No changelog narration (`// added in the refactor`, `// was previously X`) — that is what git history is for.
-- Delete a comment the code has outgrown. A stale comment is worse than none.
-
-**When you remove a mechanism, the comments describing it are part of the diff.** Grep for the mechanism's name before you call the change done. Removing polling from the export path in #1750 left three comments still explaining the client's poll — *"so the frontend can poll immediately"*, *"this record exists because the client polls"*, and a JSDoc claiming *"a dropped broadcast costs latency, not correctness, and the client's poll still resolves the run on its own"*. That last one had inverted: with polling gone, a lost broadcast reports a healthy export as timed out. Reviewer: *"Are we still polling? Just curious if the comment is stale (in which case just remove the comment or make it way more concise)."* Note the two different repairs — a comment whose *wording* is stale over a claim that survives gets rewritten; a comment stale in *substance* gets deleted. And a comment can go stale within its own diff: #1823 shipped a comment saying the admin-only variant never reads the parsed tab value, directly above the unconditional `useQueryState` that reads it.
-
-**Expect to delete most of what you wrote.** This is the review an agent-authored diff draws most reliably, and the correction is large: PR #1847's export changes drew *"I think we should limit these comments to be 'concise, to the point and only where the code isn't communicating the intent' :)"*, and the fix cut roughly 140 lines of comments down to about 40 — the ~100 removed were narration a reader gets from the code. Before pushing, read your own comments and ask of each one whether the line below it already says this. Most of the time it does.
-
-The correction keeps arriving in the same words, so treat it as the baseline rather than as one reviewer's taste: *"Looks good but let's reduce the comments. I think this is one like 98% comment and 2% code :P"* (#1868), *"Can we shorten this comment (otherwise it will be unread)"* (#1870), *"kind of a useless comment"* / *"also a useless comment"* (#1935), *"Remove this comment."* (#1803). And the deletions that landed are instructive about what survives: #1870 kept two lines saying a browser ignores `download` on a cross-origin URL — a browser rule the code cannot show — and cut the Safari/Chrome narrative around it.
-
-**A comment that records a decision you made is not documentation.** *"Does this belong in a comment here? This feels more like a decision made in a moment."* (#1870, on `getExportStatus`) — the author agreed and deleted it: *"It justified a choice I made rather than telling a reader anything about the type."* The reasoning worth keeping is a constraint the next reader will trip over; your own deliberation is what the PR description is for.
-
-**Don't import vocabulary from the code next door.** PR #1815 drew *"this comment does not need to mention the CSAM … it's not really relevant to this part of the code. It will decay eventually and it's just detached proposals in general. Also just nice to not have the word CSAM strewn all over the place."* A term picked up from a neighbouring module (a moderation category, a partner name, an incident) narrows a general mechanism to one case it happens to serve, and it spreads a charged word through files that have nothing to do with it. Describe what the code handles, in the code's own terms.
-
-### If a doc comment stays, it documents the thing — not the change
-
-The counterweight to *delete most comments* is that a JSDoc you keep has a job, and a narration that fails to do that job draws its own review. Three findings in the same window, all from the same reviewer:
-
-- *"Review Doc string with LLM. This does not describe the component and also does not document the arguments to the component."* (#1803, `ExportProposalsButton`) — repeated on the same component in #1851: *"This doc string does little to explain what this component does and how it works. Please fix."*
-- *"Make this explain the zod schema directly."* and *"Define the zod type and explain how it is used."* (#1851, `schemas/exportStatus.ts`).
-
-So the test for a surviving doc comment is whether a caller could use the symbol from the comment alone: what it renders or validates, what the parameters / fields mean, and where the value comes from. An LLM-authored preamble that restates the symbol name and then narrates the branch you added fails that test in both directions — it is too long *and* it documents nothing.
-
-Comments follow the `technical-writing` skill: active voice, simple tense, no filler.
-
-| Do not write | Write |
-|---|---|
-| `// Loop over the users and send each an invite` | *(nothing — the code says this)* |
-| `// This is a helper function that formats the display name for a profile` | *(nothing — the name says this)* |
-| `// Sort the array` | `// Stripe returns events unordered; sort before replaying.` |
-| `// We use setTimeout here because of a race condition that happens when the modal unmounts before the focus handler runs, so we defer it` | `// Defer focus: the modal unmounts before the handler runs.` |
-
-## Errors — use Common error types
-
-The `@op/common` package exports a Common error hierarchy in `packages/common/src/utils/error/index.ts`:
+| `as Foo` | A type guard, a refined input, or a Zod parse at the boundary |
+| `any` | `unknown` and narrowing |
+| `Record<string, unknown>` for a JSON column | A Zod schema for the column, narrowed once in the service layer |
+| `x!` | `if (!x) throw ...`, or restructure so `x` is not optional |
+
+- `as const` is a const assertion, not a type assertion. Keep it.
+- Cast once, at the DB boundary, never at each consumer. Fix the source type (for example, a hook returns `RefCallback<T>`) so call sites need no cast.
+- One type guard (`isRecord`) at the boundary beats one `as` per property hop. Do the same in tests.
+- API types come from `@op/api/encoders`, never `RouterOutput['x']['y']`.
+- Compare across a library boundary with explicit casts: `String(active.id) === String(over.id)`.
+- Return a tagged union for success or failure: `{ ok: true } | { ok: false; errors }`, not `undefined` on success. Use `useClaimAccount` as the model.
+- More than two outcomes: a string union (`'recovered' | 'record-gone'`), not a set of booleans.
+- `prop?: T`, not `prop: T | undefined`, and no alias like `type Cap = number | undefined`.
+- Use `== null` for optional numbers and versions, so a real `0` is not treated as missing.
+
+## Function shape and control flow
+
+- A multi-argument function takes all-named params: `assertProfileAccess({ user, profileId, permissions })`. Never mix positional and named. A single argument can stay positional.
+- Type params precisely (`user: User`, not `user: { id: string }`).
+- No nested ternaries. Use `if`/`else` into a named variable, sibling components, or a lookup map.
+- Do not add flag params or flag props (`includeDrafts?`, `forAdmin?`) to fork behaviour. Compose at the call site.
+- Domain strings that cross a boundary use an enum or a Zod literal union. Extract unclear numbers (`MILLISECONDS_PER_DAY`).
+- A value the deployment can configure is config with a default, not a constant (`AUTH_EMAIL_OTP_LENGTH` in `packages/core/src/config.ts`). Find every copy of the old assumption, including UI copy.
+- Derive lists from their source (locales, slugs, entity types). Do not retype them.
+- No `if (x) foo();`. Always use braces.
+
+## Composition and reuse
+
+- First copy is fine. Second copy: extract, or comment on why not. Third copy: blocks the merge.
+- Prefer `children` composition over slot props with branches.
+- Grep before you write a helper. Look in `packages/common/src/services/<feature>/`, `services/api/src/encoders/`, `@op/common/client` (for example `isSafeRedirectPath`) and `apps/app/src/utils/`.
+- Use the platform. Node 24: `Set.prototype.difference` / `intersection` / `union` / `isSubsetOf`.
+- A workspace imports only packages its own `package.json` declares. Add the dependency and the lockfile change in the same PR.
+- Delete code that your change made unused, and comments that describe a mechanism you removed.
+- When you re-add something the repo deleted, start from the deleted commit.
+- Keep complexity measurable. Run `pnpm test:coverage`, then `pnpm health --base origin/dev`. If a function you touched gets over the threshold, split it in the same PR.
+
+## Errors
+
+Common errors live in `packages/common/src/utils/error/index.ts`:
 
 | Error | Status | When |
 |---|---|---|
-| `NotFoundError` | 404 | Resource not found by id |
-| `ValidationError` | 400 | Invalid input that wasn't caught by Zod |
-| `UnauthorizedError` | 403 | Caller authenticated but lacks permission |
-| `AccessTierError` | 401 / 403 | Caller below the procedure's tier (thrown by middleware) |
-| `ConflictError` | 409 | State conflict (already exists, locked, etc.) |
-| `ModerationError` | 422 | Content rejected by moderation |
-| `RateLimitError` | 429 | Rate limit exceeded |
-| `CommonError` | 500 | Base class — don't throw directly |
+| `NotFoundError` | 404 | No resource for the id |
+| `ValidationError` | 400 | Invalid input that Zod did not catch |
+| `UnauthorizedError` | 403 | Authenticated but not permitted |
+| `AccessTierError` | 401/403 | Below the procedure's tier (middleware) |
+| `ConflictError` | 409 | State conflict: exists, locked |
+| `ModerationError` | 422 | Rejected by moderation |
+| `RateLimitError` | 429 | Rate limit |
+| `NotImplementedError` | 501 | Not built yet |
+| `CommonError` | 500 | Base class. Do not throw it directly |
 
-- **Don't throw raw `Error`** from services — the router has no way to map it to a status code. PR #1017 fixed an inviteUser bug where the service threw `new Error(...)` and the router was string-matching to recover.
-- **Rethrow external library exceptions** as Common errors. `access-zones` throws `AccessControlException`; the assertion wrappers in `services/assert` already rethrow it as `UnauthorizedError` — don't let the library type leak into your service signatures.
-- **Don't catch-and-rethrow** in routers. The tRPC error formatter handles Common errors directly. A `try` / `catch` in a router is almost always wrong (PR #1017).
-- **A validation error names the field, and blames the right party.** Two defects that shipped together in the same message (PR #1786, extracted from #1750): submitting a proposal could fail with `0 is invalid` — the `0` was an array index leaking out, because the formatter took the last segment of AJV's `/category/0` path as the field name and fell through to the index when `properties["0"]` didn't exist. And the actual cause was a *configuration* fault: two categories sharing one label make the `oneOf` branch ambiguous, so every proposal choosing that option fails on every attempt until an admin removes the duplicate. Reporting it as an invalid *selection* sends the one person who cannot fix it back to re-pick a value that can never validate. Say which field, and when the fault is upstream of the user, say that instead of rejecting their input.
-- **Don't read domain meaning into a generic construct.** The same formatter assumed `oneOf` / `const` / `uniqueItems` always describe configured selection options, so any custom form, rubric, or phase-settings schema using those keywords for ordinary data got told it had invalid or duplicate options — a confident diagnosis pointing at the wrong remediation. If a shared validator accepts arbitrary schemas, key your diagnostics on something that identifies *your* construct, and fall back to a generic message otherwise.
-- **Classify a transient error by its source, not only by its code — and a retry has to invalidate what the failed attempt cached.** An error classifier that keys on `ECONNRESET` / `EPIPE` alone can't tell a dropped PostgreSQL socket from an unrelated network failure somewhere else in the same call. PR #1861: the database classifier matched a rejected Supabase **Auth** request, and the retry then re-awaited the *same rejected auth promise* memoized on the request context — so every attempt failed identically, buying latency and no recovery. Two rules fall out: narrow the classifier to errors that actually originate at the connection you are retrying, and make the retry wrapper drop or re-create any per-request cache the failed call read from. A retry that replays a memoized rejection is a sleep with extra steps.
-- **Never a broad catch-all (`.catch(() => null)`) around a call that can throw for more than one reason.** When only one error is expected and recoverable (e.g. a `NotFoundError` from an assert helper when the row is legitimately absent), catch *that* narrowly and re-throw everything else. A catch-all also swallows transient failures (a DB hiccup) and lets the code fall through to wrong behavior with no error surfaced. PR #1633: `assertUserByAuthId(...).catch(() => null)` absorbed both the absent-row case *and* transient DB errors, so a short-lived hiccup silently skipped an access-filtering exclusion and returned an unfiltered list including proposals the caller must not see. Re-throw anything that isn't the expected `NotFoundError`.
+- Services never throw a raw `Error`. Wrap library exceptions (for example `AccessControlException`) as Common errors.
+- Routers do not `try`/`catch`. The tRPC formatter maps Common errors.
+- Catch narrowly. Catch only the one expected error (for example `NotFoundError`) and re-throw all others. Never `.catch(() => null)`.
+- A validation message names the field (never an array index). If the cause is a misconfiguration, it blames the configuration, not the user's input.
+- Classify a transient error by its source, not by its code alone. A retry must drop any per-request cache that the failed attempt read.
+- The retry unit matches the side-effect unit. Use one `step.run` per batch, or a counted, logged gap with a follow-up. Never re-send to recipients who already got the message.
+- In a durable step, re-read a precondition for a side effect in the step that performs it. A provider result of `rejected` is a failure: throw. Do not only log it.
 
-### The retry unit has to match the side-effect unit
+## Guards and inputs
 
-A retry only helps when re-running the unit is harmless. In a loop that sends to an external provider in batches, throwing on one failed batch makes the whole step retry — and every recipient whose batch already succeeded gets the message again. PR #1924 spelled out the trade-off that was consciously taken: *"Deliberate — same trade-off as #1919: throwing makes Inngest retry the whole step and re-blast everyone whose batch already succeeded, which is worse than a logged gap. Per-batch `step.run` so each chunk retries independently is ticketed and will cover both senders."*
+- A guard covers every arm. Before you push, list them: both ends of a join, both graph directions, the set branch and the clear branch, both halves of a both-or-neither contract, every input that changes the output, the JS check and the DB constraint, a read and its write sibling, and the client's offer and the server's acceptance.
+- Delete a branch that the guard above makes unreachable by construction.
+- Do not add a guard for a failure nobody has seen in this repo. Name the failure you reproduced, or remove the guard.
+- Fail closed. Unparseable or ambiguous input to a security decision is denied.
+- Order destructive multi-step cleanup so that a partial failure leaves the safer residue.
+- Fix the encoding, not the symptom. Make the representation unambiguous at the source. Reject an invalid value at the write, not with a render-side default.
+- A `??` fallback cannot tell "cleared" from "not resolved". Return a tagged result.
+- A uniqueness fallback loops (`while (used.has(name))`), because the generated name can collide too.
+- Do not change the case of text that a person wrote.
+- `{ ...a, ...b }` is shallow. Patch at the leaf, or merge nested objects explicitly.
+- Normalize an identifier that crosses two systems once, at the parse boundary (for example the `+` on a phone number). Reject a missing external id. Do not default it to `''`.
+- A persisted value is untrusted input to `Intl.*`, `new URL` and date parsers. Guard it in the shared helper and degrade to a displayable value.
+- URL hosts: parse with `new URL(x)` and compare `hostname` exactly. Never `url.includes(host)`.
+- Untrusted redirect paths go through `isSafeRedirectPath`. Check any extra structure (for example a locale segment) separately.
 
-So there are exactly two defensible shapes, and a PR should say which one it picked:
+## Logging
 
-- **Wrap each chunk in its own retryable step** so a failure retries only that chunk. This is the one to reach for when the work is durable-execution work (Inngest `step.run`) and the chunking is yours to choose.
-- **Swallow the batch failure, count it, and continue** — acceptable only as an interim, and only with the gap logged and a follow-up filed. A logged gap beats a duplicate blast; neither beats per-chunk retries.
+Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` in a tRPC procedure), `@op/logging/client` in the browser, and never `console.*`.
 
-The companion rule is that the failure log carries a **count, not the recipients**: #1919 was corrected to *"the log now includes only the failure count"* — see *never log raw PII* above.
+- Log a caught error as `logger.error('What failed', { error, proposalId })`. Pass the error object under the `error` key.
+- Choose the level by severity: `error` for an unexpected state, `warn` for an expected or recoverable gap, `info` for normal flow. Do not convert `console.*` 1:1.
+- Do not put personal identifiers in your own fields: email, phone, IP, token, request body. Log a stored id (`requestId`, `messageSid`) or a count instead. The logger redacts emails and phones in attributes, but that is a backstop, not permission.
+- Import the logger singleton. Do not pass it through params.
+- `console` is correct only outside the app runtime: `scripts/`, `services/db` migrate and seed entry points, test helpers.
 
-**A completed step is replayed, not re-run — so eligibility checked in an earlier step is stale by the time the retry delivers.** Durable execution memoizes each `step.run` result, which is the whole point, and it means a retry after a transient send failure reuses the `observedAt`, the instance data and the recipient plan captured before the failure. A reminder whose phase has since ended goes out anyway, with a remaining-count that no longer matches the queue. PR #1718. Decide per step whether its value is a *fact about the past* (safe to memoize) or a *precondition for the side effect* (must be re-read in the step that performs it), and put the eligibility read immediately before the send.
+## Comments
 
-**A send the provider *resolved* as rejected is still a failed send.** Inside durable execution that distinction bites harder than usual: a `step.run` that logs `status === 'rejected'` and returns completes successfully, so the function walks on to its `step.waitForEvent` and waits out the full timeout for a reply to a message that was never delivered. PRs #2161 and #2163 both shipped this, including for rejections the provider itself marks retryable. Read the send result and throw (or return a retryable outcome) when it says the message did not go out — a logged rejection inside a durable step is a silent multi-hour stall.
+- The default is no comment. Write one only when the reason is not visible in the code and you cannot rewrite the code to show it. Examples: a why, an external constraint, a real footgun.
+- One short line. No banners, no commented-out code, no history (`// was previously X`).
+- A decision you made goes in the PR body, not a comment.
+- A doc comment you keep documents the symbol and its params. It does not narrate your change.
+- Do not import charged or neighbouring-domain terms into a general mechanism.
+- Before you push, reread each comment. If the line below says the same thing, delete the comment.
+- A migration that moves code is the time to fix carried-over debt (debug logs, lost guards), or to say in the PR that you kept it on purpose.
+- Prose style: `technical-writing`.
 
-### Persisted values are untrusted input to a platform API
+## Review checklist
 
-`Intl.NumberFormat`, `Intl.DateTimeFormat`, `new URL`, and the date parsers all throw on malformed input, and a value that was validated when it was written is not validated now — a schema changed, a migration backfilled, an admin edited a row. PR #1899: a persisted currency code reached `Intl.NumberFormat` and threw during render. The fix is the shape to copy — *"`getCurrencySymbol` now validates via `isValidCurrencyCode` before touching `Intl.NumberFormat` and returns the raw code verbatim for unknown codes … Guarded in the shared helper rather than this call site so `CollaborativeBudgetField` and `ReviewRubricForm` are covered too; regression test added."*
-
-Two halves, both load-bearing: guard **in the shared helper** so every call site inherits it (the same argument as *one type guard at the boundary*), and degrade to something displayable — the raw code — rather than throwing inside a render.
-
-## A migration is the moment to resolve carried-over debt, not to launder it
-
-Porting a component or module verbatim carries its problems into the new file, where they now read as *your* decision — and reviewers will read them that way. When a migration diff picks up exploratory debug code (a stray `console.log('submit')`, an unawaited `refetch()` under `// TODO: trying this out to see if it helps`), a lost conditional guard, or a dropped state (an "Advancing" label that no longer appears), that's the moment to fix it. PRs #1661, #1685, #1711 each shipped one of these.
-
-The judgment call is scope, and both answers are defensible — say which one you picked and why:
-
-- **Fix it** when the resolution is contained and obvious: debug logging, a missing `orgProfiles?.length &&` guard on a divider, a label that stopped tracking its state.
-- **Port it unchanged and file a follow-up** when removing it needs context you don't have. PR #1661: "Ported unchanged from the old SiteHeader — out of scope for this swap. Leaving as-is: removing it blind risks the profile-switch behavior the TODO was chasing; better as a separate cleanup with the original author's context." The reviewer accepted that immediately — "porting it unchanged is the safer call."
-
-What isn't defensible is silence. An unremarked `// TODO: something is happening when switching so trying this out` in a new file reads as freshly written.
-
-## Logging — structured logger, right level, no PII
-
-Server-side logging goes through the structured `@op/logging` logger, never `console.*`. The recurring migration across PRs #1550, #1569, #1587, #1605 established four rules:
-
-- **Use `@op/logging`, not `console.error` / `console.log`.** Structured records carry `traceId` / `spanId` (OTLP correlation), and the logger serializes `Error` values properly — `JSON.stringify(new Error(...))` is `"{}"`, so a raw `console.error(err)` loses the stack. PR #1550 migrated ~90 server error sites (tRPC `onError`, webhooks, redis/realtime, `@op/common` services, app API routes) off `console.error`.
-- **Pick the level by severity — don't map `console.*` → `logger.*` 1:1.** `error` is for genuinely unexpected states only; an expected-but-recoverable absence (missing optional data, a best-effort snapshot) is `warn`; normal flow is `info`. PR #1587 review: a blanket 1:1 conversion logged recoverable states at `info` when a sibling logged the same case at `warn`. PR #1605: a collab-doc field that's absent for legacy proposals was logging `error` ~10×/day in PostHog — narrowed to the one genuinely unexpected case at `warn`.
-- **Never log raw PII.** Don't emit email addresses (or similar) to logs. Log a count plus a `sha256`-prefixed hash so records stay correlatable without exposing the value (PR #1569 — batch-send and per-invite error logs).
-- **An error object is a PII carrier — log the code, not the error.** A provider's error usually echoes the input that failed back inside `message`, so `logger.error('...', { error })` on an auth failure writes the user's phone number or email into the log without anyone choosing to. PR #2015 was caught passing a whole GoTrue `AuthError` through, and the fix logs `error.code` alone. The same review swept two `console.error(result)` calls in a hook onto `@op/logging/client` while it was there. When you need more than the code to debug, hash or redact the field you need; don't ship the object.
-- **A personal identifier is PII in a structured field too, not only inside an error.** The error-object rule above covers the common *accident*; PRs #2161 and #2163 wrote the sender's full phone number deliberately, as `{ from }`, across the configuration-error, rejection, timeout, unmatched-reply and account-created logs. The framing to apply is Scott's: *"GDPR requires that we don't collect it in the first place if it's not totally 'necessary'"* — the pipeline's PII anonymization and retention are a second line of defence, not a licence to log the value. Log the provider's non-personal trace handle instead (`messageSid`, `error.code`, `error.status`), which still lets you find the delivery.
-- Applies in the service layer too — `@op/common` services log through the structured logger at appropriate levels, not `console.log` (PR #1569).
-- **The logger is a singleton — import it.** Don't thread a logger through parameters or resolve one lazily to avoid an import. PR #1851: *"We can probably just import the logger (it's a singleton so fetching it shouldn't be an issue)."*
-- **The rule is about the application runtime.** Standalone scripts under `scripts/`, the migration and seed entry points in `services/db/` (`migrate.ts`, `seed-test.ts`), and test helpers all run outside it, have no trace context to correlate against, and print for a human watching a terminal — `console.log` / `console.error` is the right tool there. Review bots flag them every time; #1824's flag on `scripts/ensure-e2e-redis.mjs` was closed with *"This is a test so it's not relevant here"* and the bot conceded, and the identical flag on `services/db/migrate.ts` bucket diagnostics was closed twice more in #1854 and #1860 (*"This is okay. We can ignore this issue for now."*). Cite one of those threads rather than re-litigating it.
-
-## Fail closed on ambiguous input; order destructive steps for the safer residue
-
-- **A security decision on parsed/compared input fails closed.** When a gate hinges on parsing a value (a timestamp, a token expiry), treat unparseable or ambiguous input as denied rather than proceeding. PR #1507: "Unparseable timestamps fail closed."
-- **Order multi-step destructive cleanup so a partial failure leaves the safer residue.** Delete the owning/primary record first, so a crash mid-cleanup strands a harmless orphaned dependent row rather than a live resource missing its owner. PR #1507: the auth user is deleted before its profile, so a partial failure leaves a dead unowned profile row, not a real account stranded without a profile.
-- **Use `== null` for optional numeric/version fields** so a legitimate `0` (version 0, count 0) isn't treated as missing. PR #1605 (mirrors the cursor `!= null` rule in the `service-layer-structure` skill).
-
-## Validate untrusted paths before building URLs from them
-
-When a redirect target or path comes from user-controllable input, validate it before use — run it through `isSafeRedirectPath`, and separately check any structural assumption you're about to rely on (e.g. a leading `[locale]` segment) rather than trusting the shape. PR #1556: `const safeDest = dest && isSafeRedirectPath(dest) ? dest : '/'`, with a follow-up check that a safe path isn't necessarily locale-prefixed (`/info/tos`) before building the `/start` URL from its first segment.
-
-## CI workflows — the trigger picks the trust level, and it is per workflow
-
-`pull_request_target` runs with the **base** repository's context: secrets are readable and the token is writable, including for a pull request opened from a fork. That is why every job in `pr-checks.yml`, `tests.yml` and `e2e-tests.yml` carries the fork approval gate:
-
-```yaml
-environment: ${{ github.event.pull_request.head.repo.fork == true && 'fork-ci' || '' }}
-```
-
-So a new job has exactly two correct homes, and the deciding question is whether it *runs code that came from the branch*:
-
-- **It needs a secret** (`TIPTAP_PRO_TOKEN`, a service key) → it goes in a `pull_request_target` workflow **and** carries the `fork-ci` gate. Adding a job there without the `environment:` line hands a fork author the repo's secrets and runners with no maintainer in the loop — the P1 on #1866.
-- **It executes a script or binary from the pull request** (a linter installed by `./scripts/install-typos.sh`, a build, anything from `node_modules`) → it belongs in its own workflow on plain `pull_request`, which gives a fork run no secrets and a read-only token. That's the right trust level and it needs no gate.
-
-A trigger is a property of the *workflow*, not the job, so "different trust level" means a new file — which is what #1866 did, with the reasoning written into a header comment in `spellcheck.yml`. Read that comment before adding a CI job; it is the shortest statement of this rule in the repo.
-
-### The fork gate releases the secret — `pnpm install` is what spends it
-
-The `fork-ci` environment gate puts a maintainer in the loop before a secret is released. It does not follow the secret afterwards, and the step that immediately follows is usually `pnpm install`, which executes **lifecycle scripts from the checked-out branch**. So any credential readable from the environment or from pnpm's user-level config at that moment is readable by a `preinstall` the fork author wrote. PRs #2078 and #2084 walked exactly one step of this: the first moved `TIPTAP_PRO_TOKEN` out of the PR-controlled `.npmrc` (a fork could otherwise repoint the registry and post the token to it), and the second found it still written in plaintext to the runner's pnpm config before the same install ran.
-
-So when a job needs a registry credential on a `pull_request_target` workflow, the gate is the start of the answer and not the whole of it:
-
-- **Install with scripts disabled first**, then run trusted build steps — the credential is only live while nothing from the branch is executing.
-- **Or keep the credential out of anything the install step can read**, rather than relocating it from one readable place to another.
-- **Fix every workflow at once.** Both findings named `tests.yml`, `e2e-tests.yml` and `pr-checks.yml` together; patching one leaves the hole open in the other two, and the reviewer went looking (*"Maybe we should look closer at this one"*).
-
-### A `workflow_run` publisher sees two different SHAs — use the one the measured job checked out
-
-When the measuring workflow runs on `pull_request_target`, `workflow_run.head_sha` is the **base** commit that trusted workflow ran from, while the job itself checked out `github.event.pull_request.head.sha`. A publisher comparing its artifact against `workflow_run.head_sha` therefore judges every valid result superseded and never publishes — PRs #2151 and #2167 both shipped that, leaving the placeholder comment and its in-progress check hanging. Carry the measured SHA inside the artifact and compare it with the PR head you resolve yourself.
-
-Two more that come with any sticky-comment publisher:
-
-- **Match the comment on the marker *and* the author.** A lookup that takes the first comment containing the public marker can be aimed at one the PR author posted first, and the write-token job then edits, or fails to edit, that one. Filter on the bot identity.
-- **Decide what closes the placeholder.** Excluding cancelled and skipped runs from the publish job leaves the "measuring…" comment and its in-progress check in place indefinitely.
-
-## Shell scripts get the same review as the rest of the tree
-
-`scripts/` is not a lower tier. PR #2144's ADR-numbering script drew four findings, three of them defects that let it report success while doing nothing:
-
-- **A function called in an `||` list runs with `errexit` disabled for its whole body.** `number_drafts || echo "nothing to do"` turned a failed `git mv` — an untracked local draft — into a printed rename and a zero exit. Handle the empty case inside the function, or check its status explicitly.
-- **`git commit -- <dir>` records the working tree under that path, not your staged renames.** Unrelated edits ride along into the bot commit. Require a clean tree and commit the index.
-- **`cmd_a; status=$?; cmd_b; exit $status` swallows `cmd_b`'s failure.** The same shape in a `package.json` script let `pnpm test:coverage` exit 0 after the coverage merge failed, so the required artifact was simply missing. Preserve the first failure *and* surface the second.
-- **A stateful retry path needs a committed test**, not a live CI job that happens to exercise one branch. The fix ran the script against a bare remote in a temp dir and covered ordinary numbering, a number claimed upstream mid-window, a refused push, a dirty tree, detached HEAD and a local preview.
-
-## A workspace imports only what its own `package.json` declares
-
-An import that resolves on your machine because some other dependency happens to pull the package in is not a dependency — it is a hoisting accident, and a clean `pnpm install` is where it stops working. PR #2178 imported `dompurify` into `apps/app` on the copy `posthog-js` brings along; the app builds locally and fails to resolve it from a fresh lockfile. Add the package to the importing workspace's `package.json` and commit the lockfile change in the same PR.
-
-Decide whether you want the dependency at all first — `file-uploads` records the opposite answer on a different library (*extract, don't add a dep*). Then, if it stays, declare it where it is used.
-
-## Reuse before writing
-
-Before adding a helper, **grep for one**. Recurring review pattern across PRs: "I'm pretty sure we are already doing this for other server-side posthog events. We should re-use it." / "Found it."
-
-Most "I need a function that …" requests already have an answer in the codebase:
-- Format display name? `services/profile/utils`.
-- Server-side feature flag? `apps/app/src/lib/getServerFeatureFlag.ts`.
-- Locale-aware router? `@/lib/i18n` `useRouter`.
-- Encoder for table X? `services/api/src/encoders/`.
-- Schema for input Y? `packages/common/src/services/<feature>/schemas/`.
-
-Use `Explore` or `Grep` for two minutes before writing 30 lines.
-
-That includes the platform. The toolchain moved to **Node 24** in PR #1771, so the ES2025 `Set` methods are available and reviewers reach for them: `a.difference(b)`, `a.intersection(b)`, `a.union(b)`, `a.isSubsetOf(b)` say what they mean and avoid rebuilding an array to filter over `.has()`. PR #1848 review: *"A bit in the weeds but you can also just use `.difference()` which has perf benefits potentially."*
-
-## Don't
-
-- **Don't bundle scope.** One PR, one task.
-- **Don't extract too early either.** A first occurrence is fine. Don't pre-compose for hypothetical second uses.
-- **Don't add comments that just restate the code.** See *Comments* above — comment only where the code cannot carry the information, and keep it to one short line.
-- **Don't leave `// TODO: this is temporary` without an Asana follow-up.** Follow-ups land in the task tracker, not in TODOs.
-- **Don't pile flags onto a function.** When a function grows `includeDrafts?: boolean` plus `forAdmin?: boolean` plus `withReviews?: boolean`, compose call sites instead. PR #1084 review: "I like the composable approach more here because the choice is pretty specific to the use-case... not a big fan of the flags approach generally."
-- **Don't leave code the refactor orphaned.** When a component or asset stops being used after your change, delete it — don't leave it in the tree. PR #1517 self-review: the FullScreenSplit* components and the SideImage asset were only used by the old layout, so they're deleted.
+- [ ] Names use the prefix table, full words, the vocabulary of nearby code, and no `New` prefix
+- [ ] No `as` (except `as const`), `any`, `!`, `Record<string, unknown>` or `RouterOutput`
+- [ ] Multi-argument functions take all-named params. No nested ternaries, no flag params
+- [ ] Services throw Common errors. Routers have no `try`/`catch`. No broad `.catch(() => null)`
+- [ ] Every guard covers all its arms. Unreachable branches are deleted
+- [ ] Security checks fail closed. Hosts are compared exactly. Redirects go through `isSafeRedirectPath`
+- [ ] Persisted values are guarded before `Intl`/`URL`/date parsing. External ids are normalized at the parser
+- [ ] `logger.error(msg, { error })` for caught errors. No `console.*` in runtime code. No PII in fields
+- [ ] Retries match the side-effect unit. Durable steps re-read preconditions and treat `rejected` as failure
+- [ ] No duplicated logic (third copy). No new helper that already exists. Undeclared imports are added to package.json
+- [ ] Configurable numbers come from config. Lists are derived from their source
+- [ ] Comments are rare, one line, and current. No change narration
+- [ ] Dead code and stale comments from removed mechanisms are deleted
