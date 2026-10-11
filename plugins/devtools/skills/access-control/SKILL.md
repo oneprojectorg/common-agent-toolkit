@@ -53,6 +53,8 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 - **"Least privileged" defaults**: test every grant that makes a role privileged (profile admin as well as decisions admin). Don't derive the default from a reordered first page.
 - **Field redaction travels with the field**: reuse the canonical helper (`isAnonymousAuthor` / `proposalAuthorRelation` in `decision/proposalAuthor.ts`) and never re-select raw `profiles.name` / `avatarImage` for authors. When you notice copies, extract them.
 - **Broadening user/profile reads**: strip email, phone, `isAnonymous` and roles at the encoder. Owner-only fields go on a conditional `.extend()` (`encoders/posts.ts`). Default to the narrower shape. A procedure tier doesn't filter fields.
+- **A new internal profile type is excluded in the query.** `listProfiles` and `searchProfiles` filter it in SQL, also when `types` is omitted. A post-filter breaks pagination.
+- **An aggregate shown to everyone counts only rows readable by everyone** (present, not draft, visible, not flagged). A restricted source must not move a public number.
 
 ## Errors
 

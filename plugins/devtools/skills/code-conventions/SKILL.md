@@ -31,8 +31,9 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - Do not coin words (`rail`) or use qualifiers a reader must guess at (`foreign`, `raw`, `real`). Use the word the UI and the team use.
 - The current behaviour is unprefixed: `DecisionHeader` and `LegacyDecisionHeader`, never `NewDecisionHeader`.
 - Destructure-local names (`rest`, `others`) do not survive past the spread. Rename: `const { config, ...savedFieldsWithoutConfig } = savedFields`.
+- An `assert*` name says what it asserts (`assertPhaseSettingsValid`, not `assertPhaseSettings`). A verb says what the function does (`sendText`, not `smsText`).
 - Domain names over generic ones: `ProposalReviewCard`, not `Item` or `Card`. Exception: `@op/sense` primitives.
-- A file's name matches its primary export.
+- A file's name matches its primary export. In any module, the order is types, then the main export, then helpers.
 - Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
 
 ## Types
@@ -45,6 +46,8 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 | `x!` | `if (!x) throw ...`, or restructure so `x` is not optional |
 
 - `as const` is a const assertion, not a type assertion. Keep it.
+- A Zod schema is the source of truth for its shape. Derive the type with `z.infer`. Do not keep a hand-written twin of the same shape.
+- Export a symbol only when another module imports it. An unused exported type is dead code that is hard to remove later.
 - Cast once, at the DB boundary, never at each consumer. Fix the source type (for example, a hook returns `RefCallback<T>`) so call sites need no cast.
 - One type guard (`isRecord`) at the boundary beats one `as` per property hop. Do the same in tests.
 - API types come from `@op/api/encoders`, never `RouterOutput['x']['y']`.
@@ -62,6 +65,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - Do not add flag params or flag props (`includeDrafts?`, `forAdmin?`) to fork behaviour. Compose at the call site.
 - Domain strings that cross a boundary use an enum or a Zod literal union. Extract unclear numbers (`MILLISECONDS_PER_DAY`).
 - A value the deployment can configure is config with a default, not a constant (`AUTH_EMAIL_OTP_LENGTH` in `packages/core/src/config.ts`). Find every copy of the old assumption, including UI copy.
+- A feature flag is decided by PostHog, and forced on only in development and E2E (`areFeatureFlagsForcedOn()`). Do not add an env-var override. It needs a redeploy and is one more variable to maintain.
 - Derive lists from their source (locales, slugs, entity types). Do not retype them.
 - No `if (x) foo();`. Always use braces.
 
@@ -72,6 +76,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - Grep before you write a helper. Look in `packages/common/src/services/<feature>/`, `services/api/src/encoders/`, `@op/common/client` (for example `isSafeRedirectPath`) and `apps/app/src/utils/`.
 - Use the platform. Node 24: `Set.prototype.difference` / `intersection` / `union` / `isSubsetOf`.
 - A workspace imports only packages its own `package.json` declares. Add the dependency and the lockfile change in the same PR.
+- Runtime code holds no test machinery: no test-only provider, store, env switch or DB wrapper. Put the seam in the test setup (see `test-conventions`).
 - Delete code that your change made unused, and comments that describe a mechanism you removed.
 - When you re-add something the repo deleted, start from the deleted commit.
 - Keep complexity measurable. Run `pnpm test:coverage`, then `pnpm health --base origin/dev`. If a function you touched gets over the threshold, split it in the same PR.
@@ -115,6 +120,7 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - Normalize an identifier that crosses two systems once, at the parse boundary (for example the `+` on a phone number). Reject a missing external id. Do not default it to `''`.
 - A persisted value is untrusted input to `Intl.*`, `new URL` and date parsers. Guard it in the shared helper and degrade to a displayable value.
 - URL hosts: parse with `new URL(x)` and compare `hostname` exactly. Never `url.includes(host)`.
+- A regex on untrusted input has no adjacent or nested unbounded quantifiers (`\s*` next to `\s+`). CodeQL blocks polynomial backtracking.
 - Untrusted redirect paths go through `isSafeRedirectPath`. Check any extra structure (for example a locale segment) separately.
 
 ## Logging
@@ -123,7 +129,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 
 - Log a caught error as `logger.error('What failed', { error, proposalId })`. Pass the error object under the `error` key.
 - Choose the level by severity: `error` for an unexpected state, `warn` for an expected or recoverable gap, `info` for normal flow. Do not convert `console.*` 1:1.
-- Do not put personal identifiers in your own fields: email, phone, IP, token, request body. Log a stored id (`requestId`, `messageSid`) or a count instead. The logger redacts emails and phones in attributes, but that is a backstop, not permission.
+- Do not put personal identifiers in your own fields: email, phone, IP, token, request body, a raw request URL. Log a stored id (`requestId`, `messageSid`) or a count instead. The logger redacts emails and phones in attributes, but that is a backstop, not permission.
 - Import the logger singleton. Do not pass it through params.
 - `console` is correct only outside the app runtime: `scripts/`, `services/db` migrate and seed entry points, test helpers.
 
@@ -132,6 +138,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 - The default is no comment. Write one only when the reason is not visible in the code and you cannot rewrite the code to show it. Examples: a why, an external constraint, a real footgun.
 - One short line. No banners, no commented-out code, no history (`// was previously X`).
 - A decision you made goes in the PR body, not a comment.
+- Doc blocks on components, hooks, modules, schemas and specs are comments too. The default is none.
 - A doc comment you keep documents the symbol and its params. It does not narrate your change.
 - Do not import charged or neighbouring-domain terms into a general mechanism.
 - Before you push, reread each comment. If the line below says the same thing, delete the comment.
@@ -149,6 +156,8 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 - [ ] Persisted values are guarded before `Intl`/`URL`/date parsing. External ids are normalized at the parser
 - [ ] `logger.error(msg, { error })` for caught errors. No `console.*` in runtime code. No PII in fields
 - [ ] Retries match the side-effect unit. Durable steps re-read preconditions and treat `rejected` as failure
+- [ ] No exported symbol without an importer. Zod-backed types use `z.infer`
+- [ ] No test-only code paths in runtime modules
 - [ ] No duplicated logic (third copy). No new helper that already exists. Undeclared imports are added to package.json
 - [ ] Configurable numbers come from config. Lists are derived from their source
 - [ ] Comments are rare, one line, and current. No change narration

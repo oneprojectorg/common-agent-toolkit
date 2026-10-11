@@ -98,6 +98,7 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - Gate the next cursor on `cursorValue != null`, not truthiness (a score of 0 is valid).
 - A bulk read (export, backfill, digest) loops until `next` is null. When it detects truncation, surface it through the flag the UI renders, not a log line. Name any hard `limit` cap where it's applied.
 - When resolving "the newest" row, filter to candidates whose config parent (phase, category, template) still exists before ordering.
+- Two calls that depend on each other only through a DB cascade look independent. Read what you need in one query (join), or comment the dependency so nobody moves them into `Promise.all`.
 - Run independent reads with `Promise.all`. For a provider with per-request caps, chunk under the cap and use `pMap` with a named concurrency constant in `constants.ts`.
 - When a scope resolver knows the result is empty, return `isEmpty` and skip the main query.
 - Use a join only when no per-row privacy flag needs evaluating. Anonymous-author checks need the nested query (see access-control redaction).

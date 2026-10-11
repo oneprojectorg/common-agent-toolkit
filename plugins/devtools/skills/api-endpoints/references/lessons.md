@@ -20,3 +20,5 @@
 - Twilio handler tests cover signed, missing, tampered, wrong-token and missing `TWILIO_AUTH_TOKEN` cases; use Common errors (PR #2159)
 - SMS reply to unknown senders needs its own Inngest `rateLimit` keyed on `event.data.from` (PR #2161)
 - A static `YES` reply recorded a phone verification that never happened; `waitForEvent` matched only on the sender (PR #2161)
+- `reorderPhases` capped input at 100 while `createPhase` had no limit; both now use `MAX_PHASES_PER_DECISION` (PR #2197)
+- Twilio inbound handler keeps `await inngest.send` so a failure returns 500 and Twilio retries; `waitUntil` would lose the text (PR #2161)

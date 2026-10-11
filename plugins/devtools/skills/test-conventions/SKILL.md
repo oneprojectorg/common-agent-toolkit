@@ -51,13 +51,14 @@ Factories and data managers live in `packages/common/testing` (`helpers/Test*Dat
 - **A fixture shortcut keeps production's validation.** Run the encoder or validator, or validate the input before insert.
 - **Helpers throw like production.** A helper that no-ops on an unknown id hides the typo. Reuse the real assertion (`assertInstancePhase` → `NotFoundError`).
 - **Use `randomUUID()` from `node:crypto`**, not `Math.random()`. CodeQL scans test helpers.
+- **Test seams live in test code.** Swap a provider or wrap the DB with `vi.mock` in the workspace `testing/setup.ts` (e.g. `services/workflows/testing/mocks/sms.ts`). Do not add a test branch to runtime code. An opt-out helper that a test must remember to call adds failure modes nobody sees.
 - **Validate a test-only env override** (parse to the expected type) before it reaches a shell command.
 
 ## What a test must prove
 
 - **A regression test fails before the fix, for the bug's reason.** If it passes on the unpatched code, it does not cover the bug.
 - **Assert the module's behaviour, not a Zod schema you passed in.** Ask what code under test would have to break for the case to fail. If none, delete it.
-- **Cover each side of a value-selected branch** (count 1 and 2, below and above a threshold), with values that differ.
+- **Cover each side of a value-selected branch** (count 1 and 2, below and above a threshold), with values that differ. A nullable input gets a case with a real value and one with `null`.
 - **Pin a dependency's undocumented shape** that a guard reads (e.g. a `CHANNEL_ERROR` that arrives with no `err`).
 - **Cover a shared derivation at each consumer**, or test it at the shared resolver and assert each surface calls it.
 - **Test the intersection** when a change makes two behaviours coexist, not each half alone.
@@ -112,7 +113,8 @@ Past review incidents: [references/lessons.md](references/lessons.md).
 - [ ] No `as` casts in fixtures or helpers; helpers throw like production
 - [ ] Precedence tests seed the losing source with a wrong value
 - [ ] Regression test fails on the unpatched code
-- [ ] Both sides of each new value-selected branch are covered
+- [ ] Both sides of each new value-selected branch are covered, including non-null values of nullable inputs
+- [ ] No test-only code paths in runtime modules
 - [ ] New or re-tiered tRPC procedure has `describeAccessTierGating`; visibility filters have a no-leak test
 - [ ] No case only exercises a Zod schema
 - [ ] Playwright: no fixed waits or `networkidle`; role/testid selectors; no hardcoded env

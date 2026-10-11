@@ -24,6 +24,7 @@ This skill adds the rules reviewers keep catching on top of those. Past review i
 
 - A bare number in a typed utility emits no CSS: `duration-450` silently does nothing. Write `duration-[450ms]`. When a visual change is the point of the PR, open the page and check it.
 - The serif tokens have their own `md` media query. `sm:text-display` shrinks the text between 640 and 767px. Use `md:` or larger, or no prefix.
+- A JS media query paired with a Tailwind breakpoint is its exact complement: `not all and (min-width: 640px)`. `max-width: 640px` overlaps `sm:` at 640px.
 - `tailwind-merge` discards the losing class of a conflicting pair (for example `cursor-default cursor-pointer`). Delete the dead class.
 - A child's `opacity-100` cannot undo an ancestor's `opacity-50`. Dim the siblings with colour tokens instead.
 
@@ -56,7 +57,7 @@ This skill adds the rules reviewers keep catching on top of those. Past review i
 - No `next/*` imports. Take a render or slot prop and let the app inject `next/image`.
 - No `t()`. Copy comes in as props, grouped in one `copy` object when there are several strings.
 - Delete `rtl:space-x-reverse` if the shadcn CLI emits it.
-- A story is part of the change. Stories follow the token rules too.
+- A story is part of the change. Stories follow the token and accessibility rules too (label every input).
 
 ## Labels, headings, images
 

@@ -20,3 +20,5 @@
 - `ViewProposalsList` gated on admin only, while `VotingProposalsList` used `canManageProposals || proposal.isEditable` (PR #1568)
 - `ReviewPage` mirrored `canReadPhaseReviews` on the client and missed `isPhaseAtOrBefore`; return it from the API (PR #1822)
 - `useMaybeUser` outside a provider; `useCanLinkToProfile` for walled-garden links (PR #1519)
+- `PHASE` profiles leaked through `profile.list` until `listProfiles` excluded the type in SQL (PR #2149)
+- Merged-proposal like totals counted likes on hidden sources (PR #2183)

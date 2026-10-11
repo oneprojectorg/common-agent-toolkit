@@ -38,3 +38,5 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - `phase.name ?? ''` rendered "Reviews from " (PR #1701)
 - `next/image` `fill` + `object-cover` in a `size-8` container (PR #1670)
 - Storybook needs the built `@op/styles` dist on a fresh clone (PR #1782, #1784)
+- `useIsMobile` used `max-width: 640px`, so at 640px both the mobile hook and `sm:` were on (PR #2160)
+- `TenDigitsFluid` story rendered an unlabelled input (PR #2195)
