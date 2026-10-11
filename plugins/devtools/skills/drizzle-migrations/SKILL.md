@@ -35,6 +35,8 @@ Sole owner of Drizzle query syntax (filters, relations, `db.query`) and migratio
 - Add unique indexes on natural keys explicitly. Drizzle won't infer them.
 - A unique index must cover every column the service's JS guard checks. If it doesn't, the guard does nothing under concurrency.
 - Decide ON DELETE for every FK. Before you cascade a relationship, ask whether its absence still has to be shown (merged-from history, for example). If it does, keep the edge and add a marker column.
+- Trace the cascade from the row you delete. A child that owns a profile through its own `profileId` does not delete that profile. Delete the owned profiles in the same statement.
+- A field you filter, join or sort on is a column, not a key in the `data` JSON column.
 - Prefer a concrete per-entity edge table over a polymorphic one. FKs can enforce "both ends are proposals"; generic tables can't.
 - Prefer a specific table now. `ADD COLUMN type ... DEFAULT` is cheap later, while splitting a populated generic table isn't.
 - Don't copy columns that `auth.users` owns (`phone`, `email`, `*_confirmed_at`). Reference the auth row.

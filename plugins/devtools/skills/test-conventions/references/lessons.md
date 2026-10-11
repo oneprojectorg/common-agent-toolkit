@@ -32,3 +32,5 @@
 - Replace a fixed 600 ms delay with an auto-retrying assertion (PR #1639)
 - Do not wait for `networkidle` (PR #1073)
 - Fix new a11y violations rather than deleting ledger entries (PR #1505, #1521)
+- `createPhase` tests only sent `proposalTemplate: null`, so dropping the form would still pass (PR #2198)
+- A test transaction proxy on the production DB client was questioned; keep it in a `vi.mock` (PR #2207)

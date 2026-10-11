@@ -51,6 +51,7 @@ export const listRolesRouter = router({
 
 - Import schemas from `@op/common/client`. Don't write router-only DTOs or ad-hoc shapes in encoders.
 - List inputs reuse the shared builders. Use `paginationInput(tier)` from `@op/common/client`, or `paginationSchema` + `createSortable([...])` from `../../utils`. Never write a bare `limit: z.number().optional()`.
+- An input cap accepts everything the write path can create. A reorder that needs the full list caps at the creation limit (`MAX_PHASES_PER_DECISION`). Share the constant.
 - A sibling endpoint over the same data derives its filters from the sibling's schema: `proposalFilterSchema.omit({ cursor: true, limit: true })`.
 - An optional id-like string is `z.string().min(1).optional()`, because `''` is not absent. When you tighten one, tighten every sibling over the same column.
 - Add new fields to a shipped schema as optional, with a comment saying what absent means.
@@ -83,6 +84,7 @@ Next.js handlers under `apps/api/app/api/` or `apps/app/src/app/api/` run outsid
 - Return the shape the provider expects (e.g. Twilio: `<Response/>` with `text/xml`).
 - Never echo errors. Log via `@op/logging` (`logger.error(msg, { error })`) and return a fixed status.
 - Rate-limit outbound replies to unknown senders (e.g. Inngest `rateLimit` keyed on the sender).
+- `await` the hand-off (`inngest.send`) before you return 200 when the provider retries on failure. `waitUntil` is for work you can lose, such as analytics.
 - A fixed reply keyword doesn't prove the sender holds the channel. Require a code you sent.
 
 ## File uploads

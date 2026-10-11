@@ -35,3 +35,6 @@
 - The content-key format change re-translated array fields once (PR #1540)
 - The shared filter builder was lifted out of `listProposals` for the map endpoint (PR #1553); the third inline moderation copy should fold into `phaseEligiblePredicate` (PR #1848)
 - Inline fetch-then-check flagged repeatedly; use `<feature>Auth.ts` (PR #1229)
+- `discardUnconfirmedPhoneSignup` made two calls that only the cascade ordered; folded into one joined read (PR #2161)
+- `listWithReviewAggregates` returned stored `proposalData` budgets that lagged the pinned document version; overlay from the document as `listProposals` does (PR #2204)
+- `reorderPhases` took the instance lock but `createPhase` and `deletePhase` did not (PR #2197)
