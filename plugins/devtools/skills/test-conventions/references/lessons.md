@@ -34,3 +34,5 @@
 - Fix new a11y violations rather than deleting ledger entries (PR #1505, #1521)
 - `createPhase` tests only sent `proposalTemplate: null`, so dropping the form would still pass (PR #2198)
 - A test transaction proxy on the production DB client was questioned; keep it in a `vi.mock` (PR #2207)
+- A router test inserted its post rows directly instead of using a data manager (PR #2216)
+- A test gave the saved title and the document title the same text, so the wrong source passed (PR #2220)

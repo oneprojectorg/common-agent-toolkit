@@ -35,6 +35,9 @@ This skill adds the rules reviewers keep catching on top of those. Past review i
 - Items that do nothing must not be keyboard-reachable. Pass `disabled`.
 - Do not render an affordance the component cannot honour (for example a drag handle with no `dragHandleProps`). Default it off, or derive it from the props.
 - The label of a stateful control tracks its state: `isSelected ? t('Advancing') : t('Advance')`.
+- `aria-expanded` goes only on a control that expands and collapses. A load-more button that shows after expansion drops it.
+- Announce items loaded without navigation with a polite `sr-only` count. Do not make the whole list live.
+- A field that stands in for its content (an inline-edited title, a search box) is named by `aria-label`. Other fields use `Field` + `FieldLabel` or `htmlFor`.
 - Sortable headers set `aria-sort`.
 - Render `<a>` only when there is a real `href`.
 - Use `role="tabpanel"` only when a tab exists, together with `aria-labelledby`.

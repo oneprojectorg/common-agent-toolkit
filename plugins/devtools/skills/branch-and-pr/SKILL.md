@@ -10,6 +10,7 @@ description: "Scope, branches, commits and PRs: one task per PR, branch off orig
 - Exception: a trivial, load-bearing change (a one-line config tweak without which nothing runs). Name it in the PR body.
 - Revert a rewrite of nearby code that nobody asked for, unless you can say what it buys. Add no speculative feature flags.
 - Adjacent problems you see become follow-up tasks or separate PRs, not scope growth.
+- A manual testing playbook goes in the knowledge base, not `docs/`. `docs/` describes how the system works.
 - If you patch a call site and not the upstream cause, name the cause in the PR body and file it.
 - Re-adding code the repo deleted? Start from the deleting commit's parent, not a fresh rewrite.
 

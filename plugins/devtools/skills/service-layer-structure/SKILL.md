@@ -29,6 +29,7 @@ Reference shapes: `services/resources/` (single `schemas.ts`, `resourceAuth.ts`,
 - `export * from './x'` exports everything in that file. When it holds internals, re-export by name (`export { categoryTermUri } from './proposalTaxonomy'`).
 - If a promoted helper relies on a caller contract that types can't express, document that contract in JSDoc.
 - Never put I/O in `utils.ts`, and never expose `db` from a service.
+- Helpers for one concern that several features use get their own directory (`services/sms/`), not a file in each feature.
 
 ## Operation shape
 
@@ -78,6 +79,8 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - A lock only serializes writers that take the same lock. Name the concurrent writer and match what it locks: a plain `UPDATE` takes a row lock, so use `SELECT … FOR UPDATE` rather than an advisory lock.
 - A `lockX` that returns "no row" is reporting a concurrent delete. Surface it (404) instead of discarding it.
 - Re-assert every gate (phase, state, claim) in the writing statement's `WHERE`. Treat zero rows updated as a concurrent failure, with its own error message distinct from the JS-check message.
+- A partial update to a JSON column merges in the one `UPDATE` (`coalesce(col, '{}') || jsonb_build_object(...)`). A read-modify-write in JS loses a concurrent save.
+- When a uniqueness rule spans rows that the feature lock does not cover (one phone number, many decisions), lock on the contended value before the holder check. Then the loser gets the validation error, not a unique-index 500.
 - For inserts, the unique index has to cover every column the JS check covers (see drizzle-migrations). A relationship invariant (no cycles, no chains, one edge per pair) needs an advisory lock over the sorted id pair.
 - A dedup or in-progress row written before an external call must be either written after success, rolled back by the transaction, or marked retryable and checked by the early return. Never catch and move on.
 
@@ -96,6 +99,8 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - Paginated services return `Paginated<T>` (`{ items, next }`) from `@op/common` (ADR-0003).
 - The cursor carries an id tie-breaker: `orderBy [desc(createdAt), desc(id)]`, compared lexicographically.
 - Gate the next cursor on `cursorValue != null`, not truthiness (a score of 0 is valid).
+- A `timestamptz` cursor carries the full string. A JS `Date` drops microseconds, so the equality arm never matches and the id tie-breaker never engages.
+- Cap a list in SQL (`limit` plus a cursor). Do not read every row and slice in JS.
 - A bulk read (export, backfill, digest) loops until `next` is null. When it detects truncation, surface it through the flag the UI renders, not a log line. Name any hard `limit` cap where it's applied.
 - When resolving "the newest" row, filter to candidates whose config parent (phase, category, template) still exists before ordering.
 - Two calls that depend on each other only through a DB cascade look independent. Read what you need in one query (join), or comment the dependency so nobody moves them into `Promise.all`.
@@ -109,6 +114,7 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 
 - Generated CSV/spreadsheet cells that start with `= + - @`, tab or CR must be escaped where the cell string is built (e.g. `csv-stringify`'s `escape_formulas`). This covers titles, categories, custom-field values and free text.
 - An "impossible" branch logs `logger.warn` when it fires. Keep it separate from the expected-absence case.
+- When the cache holds the only copy of a record, read and write it with `getWithStatus` / `setWithStatus` from `@op/cache`, and throw on a miss or timeout so the step retries. `get` returns `null` and `set` returns silently on failure.
 - Changing a content-key or cache-key format busts the cache. Say in the PR which entries re-derive.
 
 ## Channels
@@ -129,6 +135,7 @@ See [references/lessons.md](references/lessons.md) for the PR history behind the
 - [ ] Cache reads `safeParse`d against the shared schema
 - [ ] No in-memory sort/filter of a paged set; unpaginated reads state their bound
 - [ ] Cursor has id tie-breaker and `!= null` gate; bulk reads consume every page
+- [ ] JSON-column patches merge in SQL; timestamp cursors keep the full string
 - [ ] CSV output escapes formula prefixes
 - [ ] `utils.ts` pure; barrel re-exports by name when the file has internals
 - [ ] Query syntax per drizzle-migrations; channels per realtime-channels

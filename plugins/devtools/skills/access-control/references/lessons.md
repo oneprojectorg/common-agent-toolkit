@@ -22,3 +22,4 @@
 - `useMaybeUser` outside a provider; `useCanLinkToProfile` for walled-garden links (PR #1519)
 - `PHASE` profiles leaked through `profile.list` until `listProfiles` excluded the type in SQL (PR #2149)
 - Merged-proposal like totals counted likes on hidden sources (PR #2183)
+- `assertVoteAccess` added nothing over `assertProfileAccess` with `ADMIN | VOTE`; removed (PR #2199)

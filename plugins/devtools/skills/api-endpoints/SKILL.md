@@ -85,6 +85,7 @@ Next.js handlers under `apps/api/app/api/` or `apps/app/src/app/api/` run outsid
 - Never echo errors. Log via `@op/logging` (`logger.error(msg, { error })`) and return a fixed status.
 - Rate-limit outbound replies to unknown senders (e.g. Inngest `rateLimit` keyed on the sender).
 - `await` the hand-off (`inngest.send`) before you return 200 when the provider retries on failure. `waitUntil` is for work you can lose, such as analytics.
+- One Inngest function handles an inbound channel and routes commands with a `switch`. Do not add one function per command.
 - A fixed reply keyword doesn't prove the sender holds the channel. Require a code you sent.
 
 ## File uploads

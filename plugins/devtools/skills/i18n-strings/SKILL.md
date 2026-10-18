@@ -35,6 +35,8 @@ const t2 = await getTranslations('decisions'); // request-scoped call
 - Hooks translate their own toast copy with `useTranslations()`. Translate every string in one surface, so no toast mixes languages.
 - Messages composed in `@op/common` that a user reads. The service layer has no `t()`, so return a stable code plus params and let the app map it to `t()` copy.
 - Not in scope: `services/emails` and `services/workflows` (email, SMS). They have no next-intl, no stored locale and no render boundary. Decline bot findings there and cite PR #2161 / #2163.
+- SMS copy stays in the GSM-7 basic set: `...`, not `…`, and straight quotes. One other character drops the segment length from 160 to 70, and each segment costs money.
+- A person-written value in a translated sentence (a phase name, a phone number) goes through `t.rich` in `<bdi>`, with `dir="ltr"` for a phone number.
 
 ## Errors shown to users
 
