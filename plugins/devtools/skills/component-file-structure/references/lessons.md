@@ -61,3 +61,8 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - A status map was typed `Record<string, string>` with a `?? status` raw fallback (PR #1848)
 - A one-place file should be colocated (PR #1585)
 - Inline `@keyframes` moved to the shared stylesheet (PR #1624)
+- A failed `listFilterTerms` dropped the URL filters and showed every organization (PR #2251)
+- Notification switches jumped back: responses overwrote newer clicks, saves raced, and a refetch restored the old cache (PR #2214)
+- `setIsOpen(false)` skipped `handleOpenChange`, so the dialog reopened with the last phone number (PR #2255)
+- An avatar upload unmounted the setup modal and lost unsaved edits (PR #2234)
+- A merged-away proposal stayed in `selectedIds` and blocked advancement (PR #2261)

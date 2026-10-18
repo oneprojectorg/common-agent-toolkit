@@ -40,3 +40,5 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - Storybook needs the built `@op/styles` dist on a fresh clone (PR #1782, #1784)
 - `useIsMobile` used `max-width: 640px`, so at 640px both the mobile hook and `sm:` were on (PR #2160)
 - `TenDigitsFluid` story rendered an unlabelled input (PR #2195)
+- Sidebar "See more" reported `aria-expanded=false` after expansion; new pages were not announced (PR #2234)
+- `EditableText` keeps `aria-label` with no `<label>`: the heading is the content (PR #2262)

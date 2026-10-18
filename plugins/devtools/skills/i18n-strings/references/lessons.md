@@ -22,3 +22,5 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - Removed "Coverage" keys stayed in seven dictionaries (PR #1682). Cleanup followed (PR #1684)
 - An `ar.json` corruption report was an RTL artifact, and the scan found real corruption in `bn.json` (PR #1851)
 - `AssignedCategoriesSuffix` joined names with a hardcoded `, ` (PR #1689)
+- `clipSmsText` ended in `…`, which split SMS into 70-character UCS-2 segments (PR #2199)
+- A phone number and a phase name were inserted into Arabic sentences without `<bdi>` (PR #2255, #2242)

@@ -32,6 +32,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - "State unknown" is `data === undefined`, not `isError`. Otherwise a pending first fetch renders controls that look settled and are interactive.
 - Choose a loading default that matches the settled state, or suspend. A flag computed from `undefined` data flashes.
 - Two async results folded into one state track status per request. One success must not hide the other's failure.
+- A query that shapes another query's input (filter terms) renders the error state when it fails. It never falls through to the unfiltered result.
 - Never filter or sort a paged list on the client. Put the filter in the endpoint's input schema (`api-endpoints`).
 - Do not override global query defaults (`retry`, `staleTime`) without a reason specific to that call.
 - Before you add an `invalidate()`, check whether the query and the mutation already share a channel (`realtime-channels`).
@@ -65,6 +66,10 @@ return (
 - Show the user localized copy, not `error.message` (`i18n-strings`).
 - Disable the trigger while `isPending`.
 - A toggle that opens a confirm dialog keeps a pending value until confirm or cancel.
+- Optimistic saves: `await` the query's `cancel()` before you write the cache. Never write a response over a newer optimistic value. Send saves to one row in click order, and invalidate when the last one settles.
+- Close a controlled dialog through its `onOpenChange` handler, so its reset runs. Setting `open` to `false` skips it.
+- An open editor stays mounted when the condition that offered it changes (an avatar upload makes the profile no longer bare).
+- A selection drops ids that leave the server list once the list settles (`!isFetching`). Otherwise submit fails on a pick the user cannot see.
 - Do not enable an action until its payload has loaded.
 - The enablement predicate covers every condition the server rejects on. When you add a rejection to a service, update every surface that offers the action.
 - Mirror a server batch cap (`max(500)`) in the control that builds the batch. Import the constant from `@op/common`.

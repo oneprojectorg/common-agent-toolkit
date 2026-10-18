@@ -40,6 +40,7 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 
 - **OR'd grants**: `check(A) || check(B)` denies only callers missing both. Write the conjunction explicitly, and gate on the bit the eligible roles actually share today (`Member` holds `decisions: UPDATE` and profile `READ`).
 - **Order grants**: let the broadest grant (admin) short-circuit before any lookup that can throw.
+- **No rename wrappers**: call `assertProfileAccess` with the permission bits (`decisionPermission.VOTE`). A feature assert earns its place only when it adds a lookup or returns context (see `service-layer-structure`).
 - **Fail as a denial**: if a lookup inside an authorization path fails (e.g. a stale `currentStateId`), treat it as no grant and throw `UnauthorizedError`, not a propagated `NotFoundError`.
 - **Deny vs hide**: deny with `UnauthorizedError`. Hide a restricted row (draft, hidden, flagged) with `NotFoundError`, as `getProposal` does.
 - **Relationship reads gate both ends**: write the visibility predicate once as a function of the table ref and apply it to every end. Decision read access doesn't imply access to every proposal. Joined metadata leaks too (a proposal profile's `name` is the proposal title).

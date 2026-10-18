@@ -8,3 +8,4 @@
 - Do not add a feature flag nobody asked for; gate only the surface that must be hidden (PR #1930)
 - A stacked PR whose only content is a helper with no caller ships dead code; fold it into the PR that calls it (PR #2113 → #2116)
 - When you patch a call site instead of the upstream cause, name the cause and file it (PR #1750)
+- `docs/sms-voting-manual-testing.md` moved out of the repo to the knowledge base; a logging package change was asked to go in its own PR (PR #2199)

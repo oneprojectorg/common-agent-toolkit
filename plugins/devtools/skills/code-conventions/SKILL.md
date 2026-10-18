@@ -35,6 +35,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - Domain names over generic ones: `ProposalReviewCard`, not `Item` or `Card`. Exception: `@op/sense` primitives.
 - A file's name matches its primary export. In any module, the order is types, then the main export, then helpers.
 - Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
+- Name a column, constant or endpoint for the concept, not for its first consumer: `short_code`, not `sms_code`. An endpoint does not name the UI that calls it: `createInstance`, not `createInstanceFromWizard`.
 
 ## Types
 
@@ -48,6 +49,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - `as const` is a const assertion, not a type assertion. Keep it.
 - A Zod schema is the source of truth for its shape. Derive the type with `z.infer`. Do not keep a hand-written twin of the same shape.
 - Export a symbol only when another module imports it. An unused exported type is dead code that is hard to remove later.
+- A symbol has one home module. Do not re-export it from a second module. Importers use the home module.
 - Cast once, at the DB boundary, never at each consumer. Fix the source type (for example, a hook returns `RefCallback<T>`) so call sites need no cast.
 - One type guard (`isRecord`) at the boundary beats one `as` per property hop. Do the same in tests.
 - API types come from `@op/api/encoders`, never `RouterOutput['x']['y']`.
@@ -78,6 +80,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - A workspace imports only packages its own `package.json` declares. Add the dependency and the lockfile change in the same PR.
 - Runtime code holds no test machinery: no test-only provider, store, env switch or DB wrapper. Put the seam in the test setup (see `test-conventions`).
 - Delete code that your change made unused, and comments that describe a mechanism you removed.
+- Do not wrap a helper only to rename it (`assertVoteAccess` around `assertProfileAccess`). Call the helper directly.
 - When you re-add something the repo deleted, start from the deleted commit.
 - Keep complexity measurable. Run `pnpm test:coverage`, then `pnpm health --base origin/dev`. If a function you touched gets over the threshold, split it in the same PR.
 
@@ -137,6 +140,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 
 - The default is no comment. Write one only when the reason is not visible in the code and you cannot rewrite the code to show it. Examples: a why, an external constraint, a real footgun.
 - One short line. No banners, no commented-out code, no history (`// was previously X`).
+- A better name beats a comment. Rename the prop (`cardTranslation`) instead of explaining `ownTranslation`.
 - A decision you made goes in the PR body, not a comment.
 - Doc blocks on components, hooks, modules, schemas and specs are comments too. The default is none.
 - A doc comment you keep documents the symbol and its params. It does not narrate your change.
