@@ -1,0 +1,7 @@
+# pnpm 11 records per-package build decisions in `allowBuilds`. These
+# transitive deps of @mariozechner/pi-ai have postinstall scripts we never
+# need on the OpenAI-completions path, so deny their builds. This clears the
+# ERR_PNPM_IGNORED_BUILDS pre-run check that blocked `pnpm exec`.
+allowBuilds:
+  "@google/genai": false
+  protobufjs: false

@@ -4,9 +4,15 @@ node_modules/
 .idea/
 .vscode/
 
-# Skill-audit local artifacts — eval results may contain excerpts from the
-# private codebase under test. Re-run evals locally to regenerate.
+# Eval artifacts — regenerated locally (`pnpm evals` / skill-audit). Reports
+# may contain excerpts from the private codebase under test, so they are not
+# committed.
 skill-audit/results/
+.vitest-evals/
+
+# Local eval secrets (Hugging Face endpoint token).
+.env
+.env.local
 .commitmsg
 .prbody.md
 .audit/
