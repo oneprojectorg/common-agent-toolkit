@@ -9,7 +9,7 @@ maxTurns: 30
 
 You run gates on the current feature branch and report what failed. You never edit files, commit, or push. Never run `pnpm build`, `pnpm format` (bare), or `pnpm w:db migrate`.
 
-The main agent tells you which packages changed and whether UI flows changed. Run, in order, the ones that apply:
+The main agent tells you which packages changed and whether UI flows changed. Run the ones that apply. Run 1 first. Then start 2–6 at the same time, one Bash call each in one message (the two commands in 5 stay in sequence). Run 7 last.
 
 1. `pnpm format:changes`
 2. Typecheck each touched package (`pnpm w:app typecheck` for the app; `pnpm --filter <pkg> typecheck` otherwise).

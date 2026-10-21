@@ -22,6 +22,13 @@ Every comment, story and PR body follows `technical-writing` (Simplified Technic
 
 A message with no tool call ends the turn, and the task stops there. Track Steps 1–8 in the to-do tool and do not end a turn while a step is open: not after the plan, not after the gates pass, not after a review round, and not after `gh pr create` before the hand-off. Put status notes and recommendations in the same message as the next tool call. The only early endings are the ones this skill and its adapters name: a lost claim, a request with two readings that lead to different diffs, a plan that outgrows the task, a gate failing outside the diff, and the review-round cap.
 
+## Parallel work
+
+Speed matters. Run independent work at the same time, and run work in sequence only when a step needs the output of another:
+
+- Put independent tool calls in one message: reads of the files the explorer names, the Step 4 skill loads, `git` and `gh` lookups.
+- Spawn independent subagents in one message. In Step 7 the gate-runner and the reviewers check the same revision, so they start together.
+
 ## Step 0 — Resolve the source
 
 | Input | Adapter |
@@ -74,7 +81,7 @@ Use `gh stack` (`init`, `add`, `submit`, `sync`). `branch-and-pr` owns the comma
 
 ## Step 4 — Load conventions
 
-From the plan's Files list (later: `git diff --name-only origin/dev...HEAD`), invoke each matching skill with the Skill tool before writing code in that area. Re-check when the diff reaches new paths.
+From the plan's Files list (later: `git diff --name-only origin/dev...HEAD`), invoke every matching skill with the Skill tool, all in one message, before writing code in that area. Re-check when the diff reaches new paths.
 
 | Paths | Skills |
 |---|---|
@@ -123,13 +130,13 @@ Fix each failure in the main context and re-run the gate-runner until it reports
 ## Step 7 — Review loop
 
 1. Run `/simplify` on the diff. Apply what it finds.
-2. In **one message**, spawn the reviewers whose areas the diff touches, so every perspective scores the same revision:
+2. In **one message**, spawn the gate-runner and the reviewers whose areas the diff touches, so every check scores the same revision:
    - `devtools:backend-reviewer`: `services/**`, `packages/common/**`
    - `devtools:frontend-reviewer`: `apps/app/**`, `packages/sense/**`, any `.tsx`
    - `devtools:test-reviewer`: any test or spec file changed, or behavior changed without one
 3. Fix every finding, or record a deliberate non-change with a one-line reason (commit message or comment).
-4. Re-run the gate-runner (CRAP numbers are invalid after any edit).
-5. Repeat 2–4 until a round produces no new actionable findings (every item is fixed or marked as a deliberate non-change). From round 2 on, re-spawn only the reviewers whose findings you fixed. Cap: **3 rounds**. If round 3 still has actionable findings, don't ship: comment the open findings and what you tried, leave the task `in_progress`, and stop for direction.
+   Fix every gate failure too. CRAP numbers are invalid after any edit, so every round re-runs the gate-runner.
+4. Repeat 2–3 until the gate-runner reports all PASS and a round produces no new actionable findings (every item is fixed or marked as a deliberate non-change). From round 2 on, re-spawn the gate-runner and only the reviewers whose findings you fixed. Cap: **3 rounds**. If round 3 still has actionable findings, don't ship: comment the open findings and what you tried, leave the task `in_progress`, and stop for direction.
 
 ## Step 8 — Draft PR, greptile review, hand-off
 
