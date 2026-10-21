@@ -53,6 +53,8 @@ done
 
 A `RESEND_PASSWORD` error in the log is email sending. It does not block a UI flow.
 
+If the pages render with no styles, `packages/styles/dist/styles.css` is empty: the Tailwind watcher can empty it and exit. With the servers still running, rebuild it once with `pnpm -C packages/styles exec tailwindcss -i ./theme.css -o ./dist/styles.css --minify`.
+
 ## 3. Capture in the spec
 
 Take a screenshot at each step of the basic flow: the start state, the main interaction, the result, and the edge the change adds (for example "the form does not show again").
