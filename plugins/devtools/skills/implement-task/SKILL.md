@@ -117,7 +117,7 @@ Delegate to `devtools:gate-runner` (Agent tool, `subagent_type: "devtools:gate-r
 4. unit tests for touched packages (`pnpm w:<pkg> test`)
 5. `pnpm test:coverage`, then `pnpm health --base origin/dev`
 6. `pnpm blast-radius --base origin/dev --quiet`
-7. `pnpm e2e` when UI flows, routes, or API surface used by the UI changed
+7. e2e when UI flows, routes, or API surface used by the UI changed: the touched and new specs against `pnpm dev:e2e`, with screenshots (`test-conventions` [references/e2e-screenshots.md](../test-conventions/references/e2e-screenshots.md)). If no spec covers the changed flow, write one for its basic path.
 
 Fix each failure in the main context and re-run the gate-runner until it reports all PASS.
 
@@ -140,7 +140,7 @@ Fix each failure in the main context and re-run the gate-runner until it reports
 
 ## Step 8 — Draft PR, greptile review, hand-off
 
-1. Push the branch and open the PR. `pr-description` owns the body. Include the source link (Asana URL, `Closes #<n>`, or nothing for local). Leave out CRAP and blast-radius numbers; CI posts both.
+1. Push the branch and open the PR. `pr-description` owns the body. Include the source link (Asana URL, `Closes #<n>`, or nothing for local). Leave out CRAP and blast-radius numbers; CI posts both. When e2e ran in Step 6, push its screenshots to `pr-<n>-screenshots` and add a `## Screenshots` section (method: `test-conventions` [references/e2e-screenshots.md](../test-conventions/references/e2e-screenshots.md)).
 
 ```bash
 git push -u origin "$BRANCH"

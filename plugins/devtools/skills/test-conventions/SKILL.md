@@ -93,7 +93,8 @@ describeAccessTierGating('myEndpoint', {
 
 - **Env shim.** `tests/e2e/playwright.config.ts` overrides `.env.local` with the E2E Supabase on 563xx (`NEXT_PUBLIC_SUPABASE_URL`, `DATABASE_URL`, `S3_ASSET_ROOT`, `E2E=true`, `NODE_ENV=test`, dummy TipTap values). Never hardcode these in a spec.
 - **Supabase ranges:** 543xx dev (`pnpm w:db start`), 553xx Vitest integration (`pnpm test:supabase:start`), 563xx e2e (`pnpm w:e2e supabase:setup`). `ECONNREFUSED 127.0.0.1:56321` means the e2e Supabase is not running.
-- **E2E runs a production build** (`pnpm build:e2e`, then `pnpm e2e`; `pnpm e2e:ui` for one spec). Agents cannot run `build:e2e` (the `pnpm build*` deny); ask the user or rely on CI. Never mark a task done with e2e skipped for "infrastructure issues".
+- **CI runs E2E on a production build** (`pnpm build:e2e`, then `pnpm e2e`). Agents cannot run `build:e2e` (the `pnpm build*` deny). Run the spec against `pnpm dev:e2e` instead: [references/e2e-screenshots.md](references/e2e-screenshots.md). Never mark a task done with e2e skipped for "infrastructure issues".
+- **A spec for a user flow takes screenshots** of each step of the basic flow (`page.screenshot` to `test.info().outputPath(...)`). They go in the PR body. Method: [references/e2e-screenshots.md](references/e2e-screenshots.md).
 - **Wait for a signal, never a delay.** No `waitForTimeout`, `sleep` or `setTimeout`. Use auto-retrying assertions (`await expect(locator).toBeVisible()`). Do not wait for `networkidle`.
 - **Select by role or `data-testid`**, never by DOM structure (`.locator('..')`). Add a `data-testid` or a useful `aria-label` to the component.
 - **Shared browser state needs two pages.** A per-origin invariant (`localStorage`, persisted cache) needs a second page in the same context to prove another tab cannot write it back.
@@ -118,4 +119,5 @@ Past review incidents: [references/lessons.md](references/lessons.md).
 - [ ] New or re-tiered tRPC procedure has `describeAccessTierGating`; visibility filters have a no-leak test
 - [ ] No case only exercises a Zod schema
 - [ ] Playwright: no fixed waits or `networkidle`; role/testid selectors; no hardcoded env
+- [ ] A user-flow spec takes a screenshot of each step, after the content settles
 - [ ] `randomUUID()`, not `Math.random()`, in helpers

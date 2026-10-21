@@ -17,7 +17,7 @@ The main agent tells you which packages changed and whether UI flows changed. Ru
 4. Unit tests for touched packages.
 5. `pnpm test:coverage` then `pnpm health --base origin/dev`. Non-zero exit means a changed file has a function with CRAP ≥ 30.
 6. `pnpm blast-radius --base origin/dev --quiet`
-7. e2e only when told UI flows changed.
+7. e2e only when told UI flows changed. Run the specs you are given against `pnpm dev:e2e` and copy their screenshots out, as `skills/test-conventions/references/e2e-screenshots.md` says (steps 1–4). Stop the dev servers before you return.
 
 Return:
 
@@ -26,6 +26,7 @@ PASS: <gate names>
 FAIL <gate>: <command>
   <the minimal error lines: file:line + message; for health, each function ≥30 with its score; for semgrep, file:line + rule id + message>
 Blast radius: <one-line summary of reach>
+Screenshots: <directory and file names, when e2e ran>
 ```
 
 Keep failure excerpts to what's needed to fix them. Don't speculate about fixes beyond one line each.

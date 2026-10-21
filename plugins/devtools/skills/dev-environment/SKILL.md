@@ -50,6 +50,8 @@ The root `package.json` scripts are the source of truth. `w:ui` is gone; Storybo
 | Supabase API / DB / Studio | 3121 / 3122 / 3123 |
 | Mailpit (dev emails, OTPs) | 3124 |
 
+To run an e2e spec on your branch without a build, use `pnpm dev:e2e` (app :4100, API :4300, E2E Supabase). It needs extra env; see `test-conventions` `references/e2e-screenshots.md`.
+
 A second stack runs on another prefix: `PORT_PREFIX=40 pnpm docker:dev` (app :4000). Each prefix has its own volume; its first boot pulls images again.
 
 Test Supabase uses 553xx (`pnpm test:supabase:start`); E2E Supabase uses 563xx. See `test-conventions`.
