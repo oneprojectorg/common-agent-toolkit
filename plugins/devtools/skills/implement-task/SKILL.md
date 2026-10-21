@@ -131,7 +131,7 @@ Fix each failure in the main context and re-run the gate-runner until it reports
 4. Re-run the gate-runner (CRAP numbers are invalid after any edit).
 5. Repeat 2–4 until a round produces no new actionable findings (every item is fixed or marked as a deliberate non-change). From round 2 on, re-spawn only the reviewers whose findings you fixed. Cap: **3 rounds**. If round 3 still has actionable findings, don't ship: comment the open findings and what you tried, leave the task `in_progress`, and stop for direction.
 
-## Step 8 — Draft PR and hand-off
+## Step 8 — Draft PR, greptile review, hand-off
 
 1. Push the branch and open the PR. `pr-description` owns the body. Include the source link (Asana URL, `Closes #<n>`, or nothing for local). Leave out CRAP and blast-radius numbers; CI posts both.
 
@@ -141,8 +141,22 @@ gh pr create --draft --base dev --title "<conventional title>" --body-file <file
 ```
 
    For a stack, `gh stack submit --auto` pushes every slice and opens the PRs as drafts. Then set each body with `gh pr edit <n> --body-file <file>`.
-2. Run the adapter's **hand-off** (assignee, "PR opened" comment, `in_review`).
-3. CI posts the PR-metrics comment later (see `references/crap.md`). Do not wait for it. If you return to the PR, fix any CRAP regression on a function you touched, or any file pushed over 30, and push again.
+2. Ask greptile for **one** review and wait for it (for a stack, once per slice):
+
+```bash
+PR=$(gh pr view --json number --jq .number)
+gh pr comment "$PR" --body "@greptile review"
+for i in $(seq 1 30); do   # up to 15 minutes
+  gh api "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | select(.user.login | test("greptile"; "i")) | .id' | grep -q . && break
+  sleep 30
+done
+gh api "repos/{owner}/{repo}/pulls/$PR/reviews" --jq '.[] | select(.user.login | test("greptile"; "i")) | .body'
+gh api "repos/{owner}/{repo}/pulls/$PR/comments" --jq '.[] | select(.user.login | test("greptile"; "i")) | "\(.id) \(.path):\(.line) \(.body)"'
+```
+
+   Fix every P0 and P1 finding, and the others when the fix is small. Reply to each inline comment with what you changed or why you did not (`gh api "repos/{owner}/{repo}/pulls/$PR/comments/<id>/replies" -f body="<reply>"`). After a fix, re-run the gate-runner, `pnpm format:changes`, commit and push. Never request a second greptile review. If no review arrives in 15 minutes, say so in the hand-off comment and continue.
+3. Run the adapter's **hand-off** (assignee, "PR opened" comment, `in_review`).
+4. CI posts the PR-metrics comment (CRAP and blast radius, see `references/crap.md`) for reviewers. Do not wait for it and do not act on it. The quality bar is `pnpm blast-radius` in Step 5 and `pnpm health` in Step 6, applied while you work.
 
 ## On failure
 

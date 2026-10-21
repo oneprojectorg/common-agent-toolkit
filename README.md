@@ -37,7 +37,7 @@ Or install a subset by name with `-s`. This route only installs `SKILL.md` conte
 
 ### Workflow
 
-`/implement-task <Asana gid | GitHub issue | spec | prompt>` runs a task end to end: resolve the source, branch off `origin/dev`, plan with `devtools:task-explorer`, load the convention skills for the paths it touches, red-green-refactor, gates via `devtools:gate-runner` (typecheck, semgrep, tests, `pnpm health` CRAP check, `pnpm blast-radius`), a review loop of parallel convention reviewers (three rounds at most), draft PR. `/pickup-task` picks the next Asana task and hands it to `implement-task`. Large tasks become stacked PRs with `gh stack`.
+`/implement-task <Asana gid | GitHub issue | spec | prompt>` runs a task end to end: resolve the source, branch off `origin/dev`, plan with `devtools:task-explorer`, load the convention skills for the paths it touches, red-green-refactor, gates via `devtools:gate-runner` (typecheck, semgrep, tests, `pnpm health` CRAP check, `pnpm blast-radius`), a review loop of parallel convention reviewers (three rounds at most), draft PR, one greptile review. `/pickup-task` picks the next Asana task and hands it to `implement-task`. Large tasks become stacked PRs with `gh stack`.
 
 Convention skills rarely load on their own (descriptions drop out of the skill listing when it is full), so `implement-task` and the reviewer subagents load them explicitly.
 

@@ -42,12 +42,4 @@ Scored: `{apps,packages,services}/*/src/**/*.{ts,tsx}`, minus test scaffolding. 
 
 ## After the PR opens
 
-CI (`.github/workflows/tests.yml` → `pr-metrics.yml`) runs `pnpm test:coverage`, then `pnpm health --json` against the PR base with dev's saved per-file scores, and `scripts/pr-metrics.mjs` posts a sticky comment marked `<!-- pr-metrics:comment -->`. It starts as "measuring…" and is filled in when the run ends.
-
-```bash
-gh pr view --json comments --jq '.comments[] | select(.body | contains("<!-- pr-metrics:comment -->")) | .body'
-```
-
-Its `## CRAP metrics` table lists Function, File, Cognitive, Coverage, CRAP, and, when dev's scores were usable, **Base** and **Change**: each file's worst CRAP at the merge base and how far it moved. "now over 30" marks a file the change pushed across the line. Fix every positive Change on a function you touched, and every crossing. No Change column means no usable base scores, or the PR's tests failed. Fix the tests first.
-
-The PR body does not repeat these numbers. CI owns them.
+CI (`.github/workflows/tests.yml` → `pr-metrics.yml`) runs `pnpm test:coverage`, then `pnpm health --json` against the PR base with dev's saved per-file scores, and `scripts/pr-metrics.mjs` posts a sticky comment marked `<!-- pr-metrics:comment -->` with a `## CRAP metrics` table and the blast radius. It is for reviewers. The agent does not wait for it or act on it: the gate is `pnpm health --base origin/dev` and `pnpm blast-radius` before the PR opens (implement-task Steps 5 and 6). The PR body does not repeat these numbers.
