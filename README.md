@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 20 skills, 5 subagents, and the protected-branch hooks. Installing it also installs Vercel's `react-best-practices` skill (from the `vercel` plugin in `claude-plugins-official`) as a required dependency, so front-end work always has it.
+One install gives engineers the full agent harness for this codebase: 19 skills, 5 subagents, and the protected-branch hooks. Installing it also installs Vercel's `react-best-practices` skill (from the `vercel` plugin in `claude-plugins-official`) as a required dependency, so front-end work always has it.
 
 ## Install
 
@@ -37,7 +37,7 @@ Or install a subset by name with `-s`. This route only installs `SKILL.md` conte
 
 ### Workflow
 
-`/implement-task <Asana gid | GitHub issue | spec | prompt>` runs a task end to end: resolve the source, branch off `origin/dev`, plan with `devtools:task-explorer`, load the convention skills for the paths it touches, red-green-refactor, gates via `devtools:gate-runner` (typecheck, tests, `pnpm health` CRAP check, `pnpm blast-radius`), parallel convention reviewers, draft PR. `/pickup-task` picks the next Asana task and hands it to `implement-task`. Large tasks become stacked PRs with `gh stack`.
+`/implement-task <Asana gid | GitHub issue | spec | prompt>` runs a task end to end: resolve the source, branch off `origin/dev`, plan with `devtools:task-explorer`, load the convention skills for the paths it touches, red-green-refactor, gates via `devtools:gate-runner` (typecheck, semgrep, tests, `pnpm health` CRAP check, `pnpm blast-radius`), a review loop of parallel convention reviewers (three rounds at most), draft PR. `/pickup-task` picks the next Asana task and hands it to `implement-task`. Large tasks become stacked PRs with `gh stack`.
 
 Convention skills rarely load on their own (descriptions drop out of the skill listing when it is full), so `implement-task` and the reviewer subagents load them explicitly.
 
@@ -63,7 +63,6 @@ Convention skills rarely load on their own (descriptions drop out of the skill l
 | `realtime-channels` | `Channels.X` builders and query invalidation. |
 | `test-conventions` | Vitest / Playwright layout, factories, coverage. |
 | `dev-environment` | Local docker stack, ports, env files, Storybook. |
-| `workspace-shortcuts` | `pnpm w:*` shortcuts (stub; see `dev-environment`). |
 | `technical-writing` | ASD-STE100 prose for docs, ADRs, skill bodies. |
 
 Each convention skill ends with a `Review checklist`; past review incidents live in its `references/lessons.md`.

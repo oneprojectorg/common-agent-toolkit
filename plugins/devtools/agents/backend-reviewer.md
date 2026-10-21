@@ -3,6 +3,7 @@ name: backend-reviewer
 description: Reviews backend changes in the common monorepo (services, tRPC routers, Drizzle schema and queries, access control, realtime) against the team's conventions. Use on a diff that touches services/ or packages/common/src/services.
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: medium
 maxTurns: 40
 skills:
   - code-conventions

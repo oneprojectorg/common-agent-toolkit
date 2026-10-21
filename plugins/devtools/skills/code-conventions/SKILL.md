@@ -138,8 +138,8 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 
 ## Comments
 
-- The default is no comment. Write one only when the reason is not visible in the code and you cannot rewrite the code to show it. Examples: a why, an external constraint, a real footgun.
-- One short line. No banners, no commented-out code, no history (`// was previously X`).
+- Avoid comments. Code that already says what it does gets no comment that says it again. Write one only when the reason is not visible in the code and you cannot rewrite the code to show it: a why, an external constraint, a real footgun.
+- A comment you keep is one sentence, two at most. No banners, no commented-out code, no history (`// was previously X`).
 - A better name beats a comment. Rename the prop (`cardTranslation`) instead of explaining `ownTranslation`.
 - A decision you made goes in the PR body, not a comment.
 - Doc blocks on components, hooks, modules, schemas and specs are comments too. The default is none.
@@ -164,5 +164,6 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 - [ ] No test-only code paths in runtime modules
 - [ ] No duplicated logic (third copy). No new helper that already exists. Undeclared imports are added to package.json
 - [ ] Configurable numbers come from config. Lists are derived from their source
-- [ ] Comments are rare, one line, and current. No change narration
+- [ ] Comments are rare, at most two sentences, and current. None restates the code below it. No change narration
+- [ ] semgrep reports no new finding against `origin/dev`
 - [ ] Dead code and stale comments from removed mechanisms are deleted

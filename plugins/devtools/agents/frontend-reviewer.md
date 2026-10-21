@@ -3,6 +3,7 @@ name: frontend-reviewer
 description: Reviews frontend changes in the common monorepo (React components, Next.js app routes, the sense UI library, i18n strings) against team conventions and React performance rules. Use on a diff that touches .tsx/.jsx files.
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: medium
 maxTurns: 40
 skills:
   - code-conventions

@@ -3,6 +3,7 @@ name: test-reviewer
 description: Reviews test changes in the common monorepo (unit, integration, e2e) for coverage of the change, factory use, and team test conventions. Use on a diff that adds or changes behavior or tests.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+effort: medium
 maxTurns: 30
 skills:
   - test-conventions
