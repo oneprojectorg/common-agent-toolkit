@@ -3,6 +3,7 @@ name: task-explorer
 description: Read-only explorer for the common monorepo. Given a task, finds the files, existing patterns, and risks a change will touch and returns a short brief. Use during planning instead of reading broadly in the main context.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+effort: low
 maxTurns: 40
 ---
 

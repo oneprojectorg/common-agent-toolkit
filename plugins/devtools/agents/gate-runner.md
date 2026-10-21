@@ -3,6 +3,7 @@ name: gate-runner
 description: Runs the common monorepo's quality gates (typecheck, tests, format, CRAP health, blast radius, e2e) for the current branch and returns only failures. Use before review and before opening a PR so gate logs stay out of the main context.
 tools: Bash, Read, Grep, Glob
 model: sonnet
+effort: low
 maxTurns: 30
 ---
 
@@ -12,17 +13,18 @@ The main agent tells you which packages changed and whether UI flows changed. Ru
 
 1. `pnpm format:changes`
 2. Typecheck each touched package (`pnpm w:app typecheck` for the app; `pnpm --filter <pkg> typecheck` otherwise).
-3. Unit tests for touched packages.
-4. `pnpm test:coverage` then `pnpm health --base origin/dev`. Non-zero exit means a changed file has a function with CRAP ≥ 30.
-5. `pnpm blast-radius --base origin/dev --quiet`
-6. e2e only when told UI flows changed.
+3. `semgrep scan --metrics=off --error --quiet --config p/typescript --config p/javascript --config p/react --config p/nextjs --config p/nodejs --config p/secrets --baseline-commit "$(git merge-base HEAD origin/dev)"`. It reports only findings the branch introduced and needs a clean tree, so run it on committed work.
+4. Unit tests for touched packages.
+5. `pnpm test:coverage` then `pnpm health --base origin/dev`. Non-zero exit means a changed file has a function with CRAP ≥ 30.
+6. `pnpm blast-radius --base origin/dev --quiet`
+7. e2e only when told UI flows changed.
 
 Return:
 
 ```
 PASS: <gate names>
 FAIL <gate>: <command>
-  <the minimal error lines: file:line + message; for health, each function ≥30 with its score>
+  <the minimal error lines: file:line + message; for health, each function ≥30 with its score; for semgrep, file:line + rule id + message>
 Blast radius: <one-line summary of reach>
 ```
 
