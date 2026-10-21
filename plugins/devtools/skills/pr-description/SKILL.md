@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: "What goes in a PR body: one paragraph on the architecture and the why, the task link, a mermaid erDiagram for schema PRs, a stacked-on line; no test plan, diff walk-through or metrics. Use when drafting or editing a PR description or a gh pr create --body."
+description: "What goes in a PR body: one paragraph on the architecture and the why, the task link, a mermaid erDiagram for schema PRs, e2e screenshots for UI flow changes, a stacked-on line; no test plan, diff walk-through or metrics. Use when drafting or editing a PR description or a gh pr create --body."
 ---
 
 The test for every sentence: **can the reviewer get this from the diff?** If yes, cut it. Write what survives in the `technical-writing` skill's style. `branch-and-pr` owns the title.
@@ -36,6 +36,7 @@ A one-line description for a one-line change is correct.
 - **Schema change → `erDiagram` (required).** Any PR that adds tables or changes relationships includes one, under `## Table structure`. Reviewers read it before the SQL (model: #1186).
 - **Cross-service or multi-step flow → `sequenceDiagram`; moved boundary or rewired data flow → `flowchart`.** Draw only the changed nodes and their neighbours. Skip a diagram one sentence already covers.
 - **Non-obvious root cause.** Name it when the bug class will recur (stale closure, race, cache-key drift) (model: #1176).
+- **UI flow change → `## Screenshots` (required).** One image per step of the basic flow, from the e2e run, each with a one-line caption. Host them on a `pr-<n>-screenshots` branch (method: `test-conventions` `references/e2e-screenshots.md`).
 - **Stacked PR.** First line: `Stacked on #NNNN (<what it adds>).`
 - **Follow-ups.** A `## Follow-ups (out of scope)` list, one concrete line each, only for work already in scope but deferred. File a task for anything non-trivial.
 
@@ -45,7 +46,6 @@ A one-line description for a one-line change is correct.
 - A walk-through of the diff or narration of the steps you took.
 - Blast-radius or CRAP metrics. CI computes and posts them.
 - An AI-generated summary, marketing words, decorative diagrams.
-- Screenshots, unless a visual change is hard to describe.
 
 ## Review checklist
 
@@ -53,5 +53,6 @@ A one-line description for a one-line change is correct.
 - [ ] An architectural change (boundary, state owner, migration order) is described, even if the diff is small
 - [ ] The task link is on the last line
 - [ ] A schema PR has an `erDiagram`
+- [ ] A UI flow change has a `## Screenshots` section from the e2e run
 - [ ] A stacked PR names its parent on the first line
 - [ ] No test plan, diff walk-through, pasted metrics or marketing words
