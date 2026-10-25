@@ -23,3 +23,6 @@
 - `reorderPhases` capped input at 100 while `createPhase` had no limit; both now use `MAX_PHASES_PER_DECISION` (PR #2197)
 - Twilio inbound handler keeps `await inngest.send` so a failure returns 500 and Twilio retries; `waitUntil` would lose the text (PR #2161)
 - One Inngest function per SMS command was too granular; replaced by `handleSMSCommand` with a `switch` (PR #2199)
+- `createInstance` was on `authenticatedConfirmedProcedure`, which admits public-process joiners; moved to `networkAuthenticatedProcedure` (PR #2230)
+- PROPOSALS and INFO replies named a bare code, so the next text lost its decision (PR #2199)
+- Long SMS statements and joined confirmations went past the body limit (PR #2199)

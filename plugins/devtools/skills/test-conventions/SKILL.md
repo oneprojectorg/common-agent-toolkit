@@ -52,6 +52,7 @@ Factories and data managers live in `packages/common/testing` (`helpers/Test*Dat
 - **Helpers throw like production.** A helper that no-ops on an unknown id hides the typo. Reuse the real assertion (`assertInstancePhase` → `NotFoundError`).
 - **Use `randomUUID()` from `node:crypto`**, not `Math.random()`. CodeQL scans test helpers.
 - **Test seams live in test code.** Swap a provider or wrap the DB with `vi.mock` in the workspace `testing/setup.ts` (e.g. `services/workflows/testing/mocks/sms.ts`). Do not add a test branch to runtime code. An opt-out helper that a test must remember to call adds failure modes nobody sees.
+- **Vitest does not type-check.** Run the package typecheck after you edit a test. A literal passed to a narrowly typed helper fails the excess-property check, so type the fixture as the domain type (`PhaseRules`).
 - **Validate a test-only env override** (parse to the expected type) before it reaches a shell command.
 
 ## What a test must prove
@@ -62,7 +63,7 @@ Factories and data managers live in `packages/common/testing` (`helpers/Test*Dat
 - **Pin a dependency's undocumented shape** that a guard reads (e.g. a `CHANNEL_ERROR` that arrives with no `err`).
 - **Cover a shared derivation at each consumer**, or test it at the shared resolver and assert each surface calls it.
 - **Test the intersection** when a change makes two behaviours coexist, not each half alone.
-- **When you rework query order or hydration**, seed distinct sort keys and a nested relation, and assert both survive.
+- **When you rework query order or hydration**, seed distinct sort keys and a nested relation, and assert both survive. Insert the rows out of the expected order, with pinned `createdAt`, so the test fails if nothing sorts.
 - **When you change an endpoint's output**, assert the new field survives the `.output()` parse (see `api-endpoints`).
 - **Cover a boundary the mocks erase** with one integration case: a value two systems format differently (GoTrue stores a phone without `+`, Twilio sends `+`), or provider semantics a test double skips (`@inngest/test` does not run `debounce` or `singleton`).
 - **Test a new request entry point through its real parse path**: raw body in, status code out (valid, missing signature, tampered body, missing secret).

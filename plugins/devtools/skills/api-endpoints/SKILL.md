@@ -24,6 +24,7 @@ The router validates input, calls an `@op/common` service, registers channels, a
 | `openProcedure()` | no JWT required | `AccessUser \| undefined` |
 
 - Default to `networkAuthenticatedProcedure`. Lower the tier only when `describeAccessTierGating` tests show the service still fails closed (see test-conventions).
+- `authenticatedConfirmedProcedure` also admits a person who joined only through a public process (the Join button). An endpoint that creates network content, such as `createInstance`, stays on `networkAuthenticatedProcedure`.
 - Never hand-roll `t.procedure`. Keep the default rate limit (10 req / 10 s) unless you have a stated reason to pass `{ rateLimit }`.
 - Pass `authUserId: ctx.user.id` on authed tiers and `user: ctx.user` on `openProcedure`. The tier only proves the auth class, so the service still asserts the resource.
 - If one mutation needs two permission tiers, make it two endpoints (see access-control).
@@ -87,6 +88,8 @@ Next.js handlers under `apps/api/app/api/` or `apps/app/src/app/api/` run outsid
 - `await` the hand-off (`inngest.send`) before you return 200 when the provider retries on failure. `waitUntil` is for work you can lose, such as analytics.
 - One Inngest function handles an inbound channel and routes commands with a `switch`. Do not add one function per command.
 - A fixed reply keyword doesn't prove the sender holds the channel. Require a code you sent.
+- A multi-turn SMS command stores the decision it acts on with the conversation. Do not infer it from the bound line or the most recently updated row.
+- Every SMS reply fits `SMS_MAX_BODY_LENGTH`. `splitSmsBody` splits only between lines, so chunk long text and clip echoed input before you pass it.
 
 ## File uploads
 

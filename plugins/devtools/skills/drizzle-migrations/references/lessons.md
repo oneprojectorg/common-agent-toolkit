@@ -17,3 +17,4 @@
 - Drop cargo-culted `IF NOT EXISTS` guards from migrations (PR #1274)
 - `deleteDecision` left phase profiles behind; it now deletes them with the decision profile in one `DELETE` (PR #2149)
 - Keep table-level data out of the `data` JSON column for joins and performance (PR #2076)
+- A test data manager read with `db._query`; use v2 `db.query` and migrate any `_query` you find (PR #2284)
