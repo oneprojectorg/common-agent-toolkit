@@ -65,6 +65,7 @@ const rows = await db.query.profileUserInvites.findMany({
 - Add optional filters with a conditional spread (`...(x && { col: ... })`). Remember that `undefined` conditions are dropped silently, so a missing caller id turns into "no filter". See access-control for `resolveAccessUserIds`.
 - Project with `columns: { a: true }` when you need only a few fields, and narrow `with:` relations to what the encoder emits.
 - `findFirst` on a non-unique column needs a predicate (or `orderBy`) that picks exactly one row, e.g. `{ profileId, status: ProcessStatus.PUBLISHED }`.
+- `db._query` is the v1 relational API, kept only as a migration path. Do not add it. Move a `_query` call you touch to `db.query`.
 - Fall back to `db.select()` only when `db.query` can't express the query: PostGIS/raw `sql` predicates, `count(*)`, `sql\`1\`` probes, window functions, CTEs. Leave a one-line comment saying why. Example: `packages/common/src/services/decision/resolveBoundary.ts`.
 - When a list needs both a page and a total, share one predicate builder between `findMany` and the `count(*)` (see `buildWhereClause` in `decision/listProposals.ts`).
 - For a set-membership filter, use a subquery or `EXISTS` instead of materializing ids in JS and splatting them into `IN (...)`.

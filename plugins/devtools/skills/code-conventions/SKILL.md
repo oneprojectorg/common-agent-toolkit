@@ -36,6 +36,8 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - A file's name matches its primary export. In any module, the order is types, then the main export, then helpers.
 - Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
 - Name a column, constant or endpoint for the concept, not for its first consumer: `short_code`, not `sms_code`. An endpoint does not name the UI that calls it: `createInstance`, not `createInstanceFromWizard`.
+- A `get*` op is named for the type it returns: `getSmsDecisionDescription` returns `SmsDecisionDescription`.
+- Two handlers in one scope say which event each handles (`handleModalSubmit`, `handleModalOpenChange`). Never `handleSubmit` next to `handleFormSubmit`.
 
 ## Types
 
@@ -50,6 +52,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - A Zod schema is the source of truth for its shape. Derive the type with `z.infer`. Do not keep a hand-written twin of the same shape.
 - Export a symbol only when another module imports it. An unused exported type is dead code that is hard to remove later.
 - A symbol has one home module. Do not re-export it from a second module. Importers use the home module.
+- A schema or type that more than one package uses lives in `@op/types`, with its `z.infer` type. Not in a `services/db` table file, and not in `@op/core`.
 - Cast once, at the DB boundary, never at each consumer. Fix the source type (for example, a hook returns `RefCallback<T>`) so call sites need no cast.
 - One type guard (`isRecord`) at the boundary beats one `as` per property hop. Do the same in tests.
 - API types come from `@op/api/encoders`, never `RouterOutput['x']['y']`.
@@ -76,6 +79,9 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - First copy is fine. Second copy: extract, or comment on why not. Third copy: blocks the merge.
 - Prefer `children` composition over slot props with branches.
 - Grep before you write a helper. Look in `packages/common/src/services/<feature>/`, `services/api/src/encoders/`, `@op/common/client` (for example `isSafeRedirectPath`) and `apps/app/src/utils/`.
+- Proposal data and document fields already have parsers: `parseProposalData` and `resolveDocumentFieldValues`. A second parser drifts, and then the UI and the server disagree on a value.
+- A parse helper does not return its raw input when the parse fails. The caller cannot tell a failure from a value. Throw a `ValidationError` or return a tagged result.
+- No map whose keys equal its values. Use the values directly.
 - Use the platform. Node 24: `Set.prototype.difference` / `intersection` / `union` / `isSubsetOf`.
 - A workspace imports only packages its own `package.json` declares. Add the dependency and the lockfile change in the same PR.
 - Runtime code holds no test machinery: no test-only provider, store, env switch or DB wrapper. Put the seam in the test setup (see `test-conventions`).
@@ -107,6 +113,7 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - Classify a transient error by its source, not by its code alone. A retry must drop any per-request cache that the failed attempt read.
 - The retry unit matches the side-effect unit. Use one `step.run` per batch, or a counted, logged gap with a follow-up. Never re-send to recipients who already got the message.
 - In a durable step, re-read a precondition for a side effect in the step that performs it. A provider result of `rejected` is a failure: throw. Do not only log it.
+- When an optional part of a result fails (a signed URL, a locale lookup), return the main result without it. Log the failure, and time-box the read if the caller has a deadline. Fail closed is for security and gating values, not for decoration.
 
 ## Guards and inputs
 
@@ -119,6 +126,8 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - A `??` fallback cannot tell "cleared" from "not resolved". Return a tagged result.
 - A uniqueness fallback loops (`while (used.has(name))`), because the generated name can collide too.
 - Do not change the case of text that a person wrote.
+- A confirmation applies to what you showed. Store the target id when you prompt, and compare it at confirm. If it changed, prompt again.
+- Amount arithmetic does not round to a scale that the schema does not enforce. Sum at the finest precision of the inputs, or reject extra precision at the write.
 - `{ ...a, ...b }` is shallow. Patch at the leaf, or merge nested objects explicitly.
 - Normalize an identifier that crosses two systems once, at the parse boundary (for example the `+` on a phone number). Reject a missing external id. Do not default it to `''`.
 - A persisted value is untrusted input to `Intl.*`, `new URL` and date parsers. Guard it in the shared helper and degrade to a displayable value.
@@ -132,7 +141,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 
 - Log a caught error as `logger.error('What failed', { error, proposalId })`. Pass the error object under the `error` key.
 - Choose the level by severity: `error` for an unexpected state, `warn` for an expected or recoverable gap, `info` for normal flow. Do not convert `console.*` 1:1.
-- Do not put personal identifiers in your own fields: email, phone, IP, token, request body, a raw request URL. Log a stored id (`requestId`, `messageSid`) or a count instead. The logger redacts emails and phones in attributes, but that is a backstop, not permission.
+- Do not put personal identifiers in your own fields: email, phone, IP, token, request body, a raw request URL, a storage path (it holds the uploaded filename). Log a stored id (`requestId`, `messageSid`) or a count instead. The logger redacts emails and phones in attributes, but that is a backstop, not permission.
 - Import the logger singleton. Do not pass it through params.
 - `console` is correct only outside the app runtime: `scripts/`, `services/db` migrate and seed entry points, test helpers.
 

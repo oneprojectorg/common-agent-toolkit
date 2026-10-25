@@ -36,3 +36,5 @@
 - A test transaction proxy on the production DB client was questioned; keep it in a `vi.mock` (PR #2207)
 - A router test inserted its post rows directly instead of using a data manager (PR #2216)
 - A test gave the saved title and the document title the same text, so the wrong source passed (PR #2220)
+- A backfill test inserted proposals in creation order, so it passed without sorting (PR #2329)
+- A `phaseSettings` test literal failed the excess-property check that Vitest never ran (PR #2285)
