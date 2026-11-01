@@ -38,3 +38,5 @@
 - A test gave the saved title and the document title the same text, so the wrong source passed (PR #2220)
 - A backfill test inserted proposals in creation order, so it passed without sorting (PR #2329)
 - A `phaseSettings` test literal failed the excess-property check that Vitest never ran (PR #2285)
+- Tests for the Liked filter went into a new `listProposalsLiked.test.ts`, not the unit's file (PR #2303)
+- New SMS voting unique indexes and CHECKs got DB tests that insert a violating row (PR #2399)

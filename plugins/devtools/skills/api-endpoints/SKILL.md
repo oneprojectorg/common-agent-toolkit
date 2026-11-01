@@ -89,6 +89,7 @@ Next.js handlers under `apps/api/app/api/` or `apps/app/src/app/api/` run outsid
 - One Inngest function handles an inbound channel and routes commands with a `switch`. Do not add one function per command.
 - A fixed reply keyword doesn't prove the sender holds the channel. Require a code you sent.
 - A multi-turn SMS command stores the decision it acts on with the conversation. Do not infer it from the bound line or the most recently updated row.
+- An inbound-message handler answers every expected Common error from a service with its own reply. Only unexpected errors escape to retry. Give each failure its own error class (`BallotCostError`, not a `ValidationError` that reads as "voting closed").
 - Every SMS reply fits `SMS_MAX_BODY_LENGTH`. `splitSmsBody` splits only between lines, so chunk long text and clip echoed input before you pass it.
 
 ## File uploads

@@ -79,3 +79,7 @@ One line per lesson. Each rule is already in SKILL.md unless it is listed here o
 - `toFixedPointUnits` rounded to cents, so `0.004 × 3` passed a `0.01` budget (PR #2283)
 - The Send Email hook waited on a stored-locale read past GoTrue's 5s window; it now times out at 500ms and falls back (PR #2333)
 - A storage path with the uploaded filename was logged (PR #2275)
+- Prop doc blocks that explained package design were cut to one line each (PR #2402, #2403)
+- A retried AGREE enrolled the voter on words never sent, because the step saved the new hash before returning (PR #2388)
+- A retried SUBMIT returned `already_submitted` and skipped the follow-ups; the session clear moved to its own later step (PR #2392, #2394)
+- `vote-revised-${voteSubmissionId}` dropped every revision after the first; the id now names the inbound text (PR #2394)

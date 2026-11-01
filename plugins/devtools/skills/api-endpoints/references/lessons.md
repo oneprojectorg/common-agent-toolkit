@@ -26,3 +26,4 @@
 - `createInstance` was on `authenticatedConfirmedProcedure`, which admits public-process joiners; moved to `networkAuthenticatedProcedure` (PR #2230)
 - PROPOSALS and INFO replies named a bare code, so the next text lost its decision (PR #2199)
 - Long SMS statements and joined confirmations went past the body limit (PR #2199)
+- SMS handlers gave no reply on `UnauthorizedError` or a closed phase, and a pricing `ValidationError` read as "voting closed" (PR #2391, #2392)

@@ -8,3 +8,4 @@
 - A fast export broadcast `completed` before the client subscribed; going realtime-only removed polling's self-healing (PR #1750)
 - A workflow wrote `processing` without broadcasting, so the client's silence bound became a duration bound (PR #1750)
 - Unbounded mutation-id `Set` replaced by a 500-entry FIFO map; registry ref-counting added to avoid hitting the Supabase channel cap (PR #1336)
+- A per-profile Liked channel named by the profile id let anyone infer who liked what; it is named by an HMAC instead (PR #2303)

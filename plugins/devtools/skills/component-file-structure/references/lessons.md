@@ -66,3 +66,4 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - `setIsOpen(false)` skipped `handleOpenChange`, so the dialog reopened with the last phone number (PR #2255)
 - An avatar upload unmounted the setup modal and lost unsaved edits (PR #2234)
 - A merged-away proposal stayed in `selectedIds` and blocked advancement (PR #2261)
+- Phase and budget edits saved a snapshot of the loaded settings, so they overwrote other edits; they now send scoped patches (PR #2403)

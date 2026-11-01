@@ -113,6 +113,8 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - Classify a transient error by its source, not by its code alone. A retry must drop any per-request cache that the failed attempt read.
 - The retry unit matches the side-effect unit. Use one `step.run` per batch, or a counted, logged gap with a follow-up. Never re-send to recipients who already got the message.
 - In a durable step, re-read a precondition for a side effect in the step that performs it. A provider result of `rejected` is a failure: throw. Do not only log it.
+- A retried step reaches the same result as the first attempt. Don't write the state the step branches on before its result is recorded; clear it in a later step. If a retry finds its write already applied, still run the follow-ups.
+- An Inngest event id names the occurrence that caused it (the inbound message), not the row it changes. Inngest drops a repeated id, so `vote-revised-${voteSubmissionId}` loses the second revision.
 - When an optional part of a result fails (a signed URL, a locale lookup), return the main result without it. Log the failure, and time-box the read if the caller has a deadline. Fail closed is for security and gating values, not for decoration.
 
 ## Guards and inputs
@@ -153,6 +155,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 - A decision you made goes in the PR body, not a comment.
 - Doc blocks on components, hooks, modules, schemas and specs are comments too. The default is none.
 - A doc comment you keep documents the symbol and its params. It does not narrate your change.
+- A prop or param doc is one line: what it is, and what leaving it out does (`/** Translated hover content naming recent likers. Omit for no tooltip. */`). Why the package is built that way does not go there.
 - Do not import charged or neighbouring-domain terms into a general mechanism.
 - Before you push, reread each comment. If the line below says the same thing, delete the comment.
 - A migration that moves code is the time to fix carried-over debt (debug logs, lost guards), or to say in the PR that you kept it on purpose.
