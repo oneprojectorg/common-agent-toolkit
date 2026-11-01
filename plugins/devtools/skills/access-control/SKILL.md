@@ -72,6 +72,7 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 - `<AccessBoundary>` (`apps/app/src/components/AccessBoundary.tsx`) reads `UserProvider`. `required` takes one condition or an OR-array, and `{}` denies. For booleans, use `useUser()`. Outside a provider, use `useMaybeUser()`.
 - Gate the individual privileged action, not the whole menu (Report stays visible).
 - Owner-or-admin actions use the owner-or-admin flag (`canManage || isEditable`), and sibling lists use identical conditions.
+- Don't add a `skipAccessCheck` option for one caller. Sibling functions run the same check. If a caller can't pass it, fix what the caller passes.
 - Never re-derive a server rule or the current phase on the client. Return the decision as an encoder field. Reading server-computed flags (`instance.access.admin`) is fine.
 - Links to walled-garden routes are gated with `useCanLinkToProfile`, and render as plain text when they aren't linkable.
 - Client gating is UX only. Every mutation asserts on the server.

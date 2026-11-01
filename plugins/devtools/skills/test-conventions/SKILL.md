@@ -17,7 +17,7 @@ CLAUDE.md owns the basics: the `.unit.test.ts` vs `.test.ts` split, `pnpm test`,
 
 - A bug with a service-layer cause gets a Vitest test, even if the symptom is in the UI. Use Playwright only when the failure needs a browser.
 - `.spec.ts` is Playwright, `.test.ts` is Vitest. Never put `.test.ts` in `tests/e2e/`.
-- One test file per source unit. A second file for the same unit is named `<unit>.<aspect>.test.ts`.
+- One test file per source unit, named after it. Add cases for a new filter or option to the unit's existing file (`listAllProposals.test.ts`), not a file named for the feature (`listProposalsLiked.test.ts`). A second file for the same unit is named `<unit>.<aspect>.test.ts`.
 - A config change that moves files between Vitest projects can empty one project. Check what each project still runs, and add a smoke test to an emptied one.
 - A new a11y violation fails the `a11y-known-violations` check. Fix it. Add an entry to `tests/e2e/a11y-baseline/known-violations.json` only as deliberate, accepted debt. Never delete entries to silence the check.
 
@@ -65,6 +65,7 @@ Factories and data managers live in `packages/common/testing` (`helpers/Test*Dat
 - **Test the intersection** when a change makes two behaviours coexist, not each half alone.
 - **When you rework query order or hydration**, seed distinct sort keys and a nested relation, and assert both survive. Insert the rows out of the expected order, with pinned `createdAt`, so the test fails if nothing sorts.
 - **When you change an endpoint's output**, assert the new field survives the `.output()` parse (see `api-endpoints`).
+- **Every new unique index or CHECK constraint gets a DB test** in which the violating insert fails.
 - **Cover a boundary the mocks erase** with one integration case: a value two systems format differently (GoTrue stores a phone without `+`, Twilio sends `+`), or provider semantics a test double skips (`@inngest/test` does not run `debounce` or `singleton`).
 - **Test a new request entry point through its real parse path**: raw body in, status code out (valid, missing signature, tampered body, missing secret).
 - **Use a real parser** (`csv-parse/sync`, strict) to read a structured artifact in an assertion. Do not hand-roll one.

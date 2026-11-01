@@ -28,10 +28,17 @@ Sole owner of Drizzle query syntax (filters, relations, `db.query`) and migratio
 - One concern per migration. Keep unrelated schema changes out.
 - A data backfill is not a migration. Ship it as a standalone ops script you can run, inspect and re-run per environment. Keep migrations to DDL.
 - Skip defensive `IF NOT EXISTS` guards unless you have a concrete reason.
+- An update that must keep the edit date sets `updatedAt: sql\`${table.updatedAt}\``. The shared `timestamps.updatedAt` has `$onUpdate`, so any `.set()` without it stamps now. Don't write back a value you read earlier; a concurrent edit is lost.
 
 ## Schema rules
 
 - FK column names follow the neighbouring tables' suffix (e.g. `addedByProfileUserId`, not `addedById`).
+- Name a new table after its siblings (`decisions_vote_drafts` next to `decisions_vote_submissions`) and for what a row holds (`decision_phone_numbers`, not `decision_chat_lines`). Use the words the code already uses (`selections`, not `picks`).
+- Start with the fewest columns. Store the end result (`enrolledAt`), not the method that got there (an attestation hash) or a status you can derive. Add columns when a second process needs them.
+- Reference the stable concept, not an intermediary you derive it from: a taxonomy term, not the boundary the term comes from.
+- A set of rows a record points at is a child table with FKs, shaped like its sibling (`decisions_vote_draft_proposals` mirrors `decisions_vote_proposals`). Not a jsonb array of ids.
+- Keep channel and session state (page cursor, last line used) out of a domain table. Put it in its own table, so the domain row works for web and SMS alike.
+- Before you make a column unique, ask what could need a second row later (a second channel on the same decision). When a unique index changes, change the relation too (`r.one` → `r.many`).
 - Add unique indexes on natural keys explicitly. Drizzle won't infer them.
 - A unique index must cover every column the service's JS guard checks. If it doesn't, the guard does nothing under concurrency.
 - Decide ON DELETE for every FK. Before you cascade a relationship, ask whether its absence still has to be shown (merged-from history, for example). If it does, keep the edge and add a marker column.
@@ -87,6 +94,8 @@ See [references/lessons.md](references/lessons.md) for the PR history behind the
 - [ ] No data backfill inside a migration
 - [ ] New relations in `relations.ts` (v2), none added in `*.sql.ts`
 - [ ] Unique index covers every column the JS guard checks
+- [ ] New table is named like its siblings, holds the minimum columns, and keeps session state out
+- [ ] Updates that must not bump the edit date keep `updatedAt` in the `.set()`
 - [ ] ON DELETE chosen deliberately for each new FK
 - [ ] No duplicated `auth.users` columns; no reads of `profileUsers.email` for contact
 - [ ] Reads use `db.query` with object filters; `{ in }` not `{ inArray }`

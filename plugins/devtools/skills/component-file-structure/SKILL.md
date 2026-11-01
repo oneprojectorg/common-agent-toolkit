@@ -66,6 +66,7 @@ return (
 - Show the user localized copy, not `error.message` (`i18n-strings`).
 - Disable the trigger while `isPending`.
 - A toggle that opens a confirm dialog keeps a pending value until confirm or cancel.
+- A save sends only the fields the user edited, not a snapshot of the loaded record. A snapshot overwrites a newer value another admin saved, and drops another section's pending edit.
 - Optimistic saves: `await` the query's `cancel()` before you write the cache. Never write a response over a newer optimistic value. Send saves to one row in click order, and invalidate when the last one settles.
 - Close a controlled dialog through its `onOpenChange` handler, so its reset runs. Setting `open` to `false` skips it.
 - An open editor stays mounted when the condition that offered it changes (an avatar upload makes the profile no longer bare).

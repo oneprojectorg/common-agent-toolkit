@@ -25,6 +25,7 @@ ctx.registerMutationChannels([Channels.profilePosts(input.profileId)]);
 - Builders return `as const` template literals. Export `type FooChannel = ReturnType<typeof Channels.foo>` and add it to the `ChannelName` union, or callers get confusing type errors.
 - Each non-trivial builder has a JSDoc naming its subscribers (queries) and broadcasters (mutations). Update it when you add a caller.
 - Don't use `Channels.global()` for normal invalidation.
+- Channel names are public. Plain ids are fine when the payload only tells the client to refetch through an access-checked API. If the channel itself reveals private data (whose Liked list changed), name it by an HMAC of the private part. See `getProposalLikesChannels`, keyed by `REALTIME_CHANNEL_SECRET`.
 
 ## Choosing channels
 

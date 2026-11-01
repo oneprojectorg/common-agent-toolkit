@@ -18,3 +18,5 @@
 - `deleteDecision` left phase profiles behind; it now deletes them with the decision profile in one `DELETE` (PR #2149)
 - Keep table-level data out of the `data` JSON column for joins and performance (PR #2076)
 - A test data manager read with `db._query`; use v2 `db.query` and migrate any `_query` you find (PR #2284)
+- A proposal short-code backfill bumped every `updatedAt`, then wrote back a stale read; it now sets `updatedAt` to the column itself (PR #2382)
+- SMS voting tables: `picks` jsonb became `decisions_vote_draft_proposals`, session state moved to `decision_chat_sessions`, enrolment kept `enrolled_at` only, and the line got a `channel` (PR #2399)
