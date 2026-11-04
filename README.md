@@ -2,7 +2,7 @@
 
 Claude Code plugin marketplace for the [One Project `common`](https://github.com/oneprojectorg/common) monorepo.
 
-One install gives engineers the full agent harness for this codebase: 19 skills, 5 subagents, and the protected-branch hooks. Installing it also installs Vercel's `react-best-practices` skill (from the `vercel` plugin in `claude-plugins-official`) as a required dependency, so front-end work always has it.
+One install gives engineers the full agent harness for this codebase: 20 skills, 5 subagents, and the protected-branch hooks. Installing it also installs Vercel's `react-best-practices` skill (from the `vercel` plugin in `claude-plugins-official`) as a required dependency, so front-end work always has it.
 
 ## Install
 
@@ -14,6 +14,16 @@ Once per machine, add the marketplace and install the plugin:
 ```
 
 Both commands run inside Claude Code. The marketplace add clones this repo to `~/.claude/plugins/cache/`; the install wires the skills and hooks into Claude Code via the cached copy. Works with private GitHub repos through your existing `gh` / SSH auth.
+
+### CLI tools (Homebrew)
+
+Some skills run CLI tools that macOS does not ship. The `Brewfile` at the repo root declares them. Install them once:
+
+```bash
+brew bundle install --file=Brewfile
+```
+
+Today it holds one tool: `cpulimit`, which `e2e-flake-reproduction` uses to cap the e2e next-servers.
 
 ## Updating
 
@@ -63,6 +73,7 @@ Convention skills rarely load on their own (descriptions drop out of the skill l
 | `realtime-channels` | `Channels.X` builders and query invalidation. |
 | `test-conventions` | Vitest / Playwright layout, factories, coverage. |
 | `dev-environment` | Local docker stack, ports, env files, Storybook. |
+| `e2e-flake-reproduction` | Reproduce a CI-only flaky Playwright test locally and verify a de-flake fix. |
 | `technical-writing` | ASD-STE100 prose for docs, ADRs, skill bodies. |
 
 Each convention skill ends with a `Review checklist`; past review incidents live in its `references/lessons.md`.
