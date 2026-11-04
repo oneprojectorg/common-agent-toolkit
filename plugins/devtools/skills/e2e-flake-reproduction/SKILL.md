@@ -53,6 +53,12 @@ docker unpause supabase_db_common-e2e 2>/dev/null
 
 Run it beside the rung-1 loop (keep the rung-2 caps on). Size the cycle count to the loop's expected runtime. This rig reproduced `mixed-version-reviews.spec.ts:417` at 1/50 where rungs 1–2 gave 150/150 green.
 
+A pause makes queries **hang**; a restart makes them **error**. If the CI failure is a latched 500 or a failed query, escalate the flapper to restarts — this is what reproduced the latched SSR 500 (`heading "500"` in the page snapshot) at 11/60 where pauses only produced `networkidle` hangs:
+
+```bash
+for i in $(seq 1 10); do sleep 22; docker restart -t 0 supabase_db_common-e2e; done
+```
+
 ### 4. Deterministic route injection
 
 A stochastic hit proves the class; a regression test needs determinism. Intercept the first document request and fail it, then let retries through:
@@ -70,12 +76,48 @@ await context.route('**/reviews', (route) => {
 
 This converts "the first navigation latches an error surface" into a test that fails every time without the fix and passes every time with it.
 
+## One-command rig
+
+Wrap rungs 2–3 in one script so a reproduction run is repeatable by anyone. Shape (a working copy lived at `tests/e2e/reproduce-flake.sh` in the common monorepo):
+
+```bash
+#!/usr/bin/env bash
+# args: spec path (default mixed-version-reviews), repeats per test (default 30)
+
+# 1. preflight: exit with the fix command if a piece is missing
+#    curl :4100 and :4300 | cpulimit on PATH | supabase_db_common-e2e running
+
+# 2. caps (rung 2)
+APP_PID="$(lsof -nP -tiTCP:4100 -sTCP:LISTEN | head -1)"
+API_PID="$(lsof -nP -tiTCP:4300 -sTCP:LISTEN | head -1)"
+cpulimit -p "$APP_PID" -l 30 & cpulimit -p "$API_PID" -l 30 &
+docker update --cpus 0.5 supabase_db_common-e2e
+
+# 3. restart flapper (rung 3), backgrounded, guarded by a stop file
+( while [ -f "$STOP" ]; do sleep 22; docker restart -t 0 supabase_db_common-e2e; done ) &
+
+# 4. teardown on EXIT/INT/TERM — always, even on Ctrl-C:
+#    rm stop file; kill flapper + cpulimits; kill -CONT both server PIDs;
+#    docker update --cpus 0; docker unpause; docker start
+
+# 5. the loop
+pnpm exec playwright test "$SPEC" --project=e2e \
+  --repeat-each="$REPEATS" --workers=4 --retries=0 \
+  --trace=retain-on-failure --reporter=list
+
+# 6. on failure: list the newest test-results/ dirs and say that a page
+#    snapshot containing `heading "500"` is the latched CI failure
+```
+
+The teardown trap is the part not to skip: a killed `cpulimit` leaves its target SIGSTOPped, and a flapper that outlives the loop keeps restarting the database under the next person's run. Run the script on the pre-fix checkout to reproduce, then on the fix branch to verify the fix holds under the same abuse. Expected yield at these defaults: roughly 1 failed run in 6, a mix of latched-500 failures and seeding-time connection errors.
+
 ## Read the failure shape, not the color
 
 A reproduced failure must match the CI failure's mechanism before it counts. Compare the local `error-context.md` page snapshot against the CI trace. Two failures on the same line can be different bugs:
 
 - **Latched error surface**: `goto` returns, the error UI renders, the ready element never appears. A re-navigation helper fixes this.
 - **`networkidle` hang**: the page renders fully, but a stalled request keeps `goto` from returning at all. A re-navigation helper never gets control; only a longer test timeout or `waitUntil: 'domcontentloaded'` plus a ready-locator fixes this.
+- **Rig artifact**: the test dies in seeding or sign-in (`CONNECTION_CLOSED`, `ECONNREFUSED`, a GoTrue 500) because the flapper cut its database connection. A real first-attempt failure, but not the CI mechanism — do not count it as a reproduction.
 
 ## Environment repairs a stale e2e stack forces
 
