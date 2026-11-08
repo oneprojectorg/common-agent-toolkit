@@ -27,3 +27,4 @@
 - PROPOSALS and INFO replies named a bare code, so the next text lost its decision (PR #2199)
 - Long SMS statements and joined confirmations went past the body limit (PR #2199)
 - SMS handlers gave no reply on `UnauthorizedError` or a closed phase, and a pricing `ValidationError` read as "voting closed" (PR #2391, #2392)
+- The Send Email hook accepted any string as `token`, so a leaked hook secret could send phishing text from our domain; the token is now digits only, and route-handler rate limiting became a follow-up (PR #2414)

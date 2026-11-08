@@ -44,3 +44,5 @@
 - SMS decision and ballot lists read every row and trimmed in memory; asked to limit and paginate in the query (PR #2199)
 - `patchExportRecord` used `get`/`set`, so a timeout wrote a partial record or left it `processing`; switched to the checked variants (PR #1985)
 - SMS helpers spread over `decision/` and `notification/` were grouped under `services/sms/` (PR #2199)
+- The phase endpoints wrote processInstances without clearing the decision caches or rescheduling pending transitions; both were added to match the builder save (PR #2240)
+- listBallotProposals threw when one proposal's cost could not be read, blocking the whole ballot; reads now return it as unpriced and submitVote stays strict (PR #2384)

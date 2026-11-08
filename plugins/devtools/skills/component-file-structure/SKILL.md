@@ -75,6 +75,7 @@ return (
 - The enablement predicate covers every condition the server rejects on. When you add a rejection to a service, update every surface that offers the action.
 - Mirror a server batch cap (`max(500)`) in the control that builds the batch. Import the constant from `@op/common`.
 - The server reports a state transition (for example it returns `didPublish`). Do not infer one from cached client state.
+- Announce success (toast, live region) only after the write resolves. A hook that fires a write returns its result, so the caller can show the failure copy.
 - An irreversible dialog derives its counts from live data on every render. A retry submits what the list holds now.
 - Build a multi-step form's submit payload from the persisted store, not from local state.
 - A hook that mutates and then navigates takes a `navigateTo` / `onSuccess` callback. It does not hard-code a route. Wrap follow-up navigation in `startTransition`.
@@ -84,6 +85,7 @@ return (
 
 - State that should survive a reload, be shareable, or step with Back uses `nuqs` `useQueryState`. Ephemeral UI state uses `useState`.
 - A URL param is untrusted input. Clamp or validate it where you read it: `urlSearch.slice(0, PROPOSAL_SEARCH_MAX_LENGTH)`.
+- A URL param never proves the user asked for a write. Replay a deferred action only when this browser stored proof of it (sessionStorage) before the redirect.
 - When you rename a param value, keep the old value as an alias.
 - Remove a one-shot flag (`?new=true`) on read with `history: 'replace'`.
 - Let nuqs parsers serialize. Do not hand-roll separator parsing.

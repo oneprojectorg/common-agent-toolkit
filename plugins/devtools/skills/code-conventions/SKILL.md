@@ -35,7 +35,9 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - Domain names over generic ones: `ProposalReviewCard`, not `Item` or `Card`. Exception: `@op/sense` primitives.
 - A file's name matches its primary export. In any module, the order is types, then the main export, then helpers.
 - Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
+- Code uses US spelling, including table, column and key names: `enrollment`, not `enrolment`; `color`, not `colour`.
 - Name a column, constant or endpoint for the concept, not for its first consumer: `short_code`, not `sms_code`. An endpoint does not name the UI that calls it: `createInstance`, not `createInstanceFromWizard`.
+- Do not build one customer's concept into the platform. Common has no districts; a district is a taxonomy term. Model the generic rule, and keep a process without it working.
 - A `get*` op is named for the type it returns: `getSmsDecisionDescription` returns `SmsDecisionDescription`.
 - Two handlers in one scope say which event each handles (`handleModalSubmit`, `handleModalOpenChange`). Never `handleSubmit` next to `handleFormSubmit`.
 
@@ -125,6 +127,7 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - Fail closed. Unparseable or ambiguous input to a security decision is denied.
 - Order destructive multi-step cleanup so that a partial failure leaves the safer residue.
 - Fix the encoding, not the symptom. Make the representation unambiguous at the source. Reject an invalid value at the write, not with a render-side default.
+- Store a state as an explicit field. Never infer it from text a person can edit (a display name that matches `Participant N`).
 - A `??` fallback cannot tell "cleared" from "not resolved". Return a tagged result.
 - A uniqueness fallback loops (`while (used.has(name))`), because the generated name can collide too.
 - Do not change the case of text that a person wrote.

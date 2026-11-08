@@ -83,3 +83,6 @@ One line per lesson. Each rule is already in SKILL.md unless it is listed here o
 - A retried AGREE enrolled the voter on words never sent, because the step saved the new hash before returning (PR #2388)
 - A retried SUBMIT returned `already_submitted` and skipped the follow-ups; the session clear moved to its own later step (PR #2392, #2394)
 - `vote-revised-${voteSubmissionId}` dropped every revision after the first; the id now names the inbound text (PR #2394)
+- A new schema field was spelled `enrolment`; code uses US spelling, and the shipped table gets renamed in a follow-up (PR #2386)
+- Ballot and vote scoping was built on "districts", a Columbus-only concept; a follow-up generalizes it to a taxonomy term and keeps processes without one working (PR #2389)
+- Onboarding detected anonymous participants with a regex on the profile name; the reviewer asked for an anonymity flag on the profile, which also lets "Participant" be translated (PR #2427)

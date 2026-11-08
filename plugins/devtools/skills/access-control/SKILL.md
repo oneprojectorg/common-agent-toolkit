@@ -34,6 +34,7 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 - Access-user loaders are memoized per request (`withRequestCache`) and also durably cached. A new loader mirrors `getOrgAccessUser`, and every mutation that changes roles or membership invalidates its cache (e.g. `invalidateProfileUserCacheForRole`).
 - Gate reads on `permission.READ`, even when the view is admin-only.
 - Personal-profile owners have no role row on their own profile. For owner actions there, check `user.profileId === profileId` together with `getProfileAccessRoles` + `checkPermission`, not the throwing assert.
+- A user's own records (ballots, enrollment, phone account) key on `users.profileId` (`getIndividualProfileId`). `currentProfileId` follows the org switcher and can point at a shared organization.
 - Type access parameters explicitly. Don't pass loose `{ id }` objects, and never compare role names.
 
 ## Rules that recur in review
@@ -43,6 +44,7 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 - **No rename wrappers**: call `assertProfileAccess` with the permission bits (`decisionPermission.VOTE`). A feature assert earns its place only when it adds a lookup or returns context (see `service-layer-structure`).
 - **Fail as a denial**: if a lookup inside an authorization path fails (e.g. a stale `currentStateId`), treat it as no grant and throw `UnauthorizedError`, not a propagated `NotFoundError`.
 - **Deny vs hide**: deny with `UnauthorizedError`. Hide a restricted row (draft, hidden, flagged) with `NotFoundError`, as `getProposal` does.
+- **Errors echo only caller input**: a not-found or denied reply may quote an id or slug the caller typed, never one resolved from stored context (a bound line, a session, a default).
 - **Relationship reads gate both ends**: write the visibility predicate once as a function of the table ref and apply it to every end. Decision read access doesn't imply access to every proposal. Joined metadata leaks too (a proposal profile's `name` is the proposal title).
 - **Shared getters stay permissive** when admin mutations need restricted rows. Apply the restriction at the read call site and add a comment.
 - **Assert and probe together**: when an existence probe runs in `Promise.all` with the assert, the assert's rejection wins, so unauthorized callers get the deterministic error.
@@ -52,6 +54,7 @@ The library is the `access-zones` npm package, wrapped in `packages/common/src/s
 - **Two tiers means two endpoints**: if one mutation needs two permission tiers, add an endpoint for the looser case. Gate a lighter engagement action (like/follow) at the same bar as its heavier sibling (comment), never stricter.
 - **Legacy org grants stay legacy**: don't copy the legacy implicit org-membership grant into new write paths. Gate it on the legacy condition.
 - **"Least privileged" defaults**: test every grant that makes a role privileged (profile admin as well as decisions admin). Don't derive the default from a reordered first page.
+- **Holder lists match the assert**: a query that lists who holds a permission (eligible voters, reviewers) counts every grant the assert accepts, including the `GLOBAL_USER_PUBLIC` grant.
 - **Field redaction travels with the field**: reuse the canonical helper (`isAnonymousAuthor` / `proposalAuthorRelation` in `decision/proposalAuthor.ts`) and never re-select raw `profiles.name` / `avatarImage` for authors. When you notice copies, extract them.
 - **Broadening user/profile reads**: strip email, phone, `isAnonymous` and roles at the encoder. Owner-only fields go on a conditional `.extend()` (`encoders/posts.ts`). Default to the narrower shape. A procedure tier doesn't filter fields.
 - **A new internal profile type is excluded in the query.** `listProfiles` and `searchProfiles` filter it in SQL, also when `types` is omitted. A post-filter breaks pagination.

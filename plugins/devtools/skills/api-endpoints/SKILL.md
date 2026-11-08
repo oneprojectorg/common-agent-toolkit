@@ -82,6 +82,8 @@ Next.js handlers under `apps/api/app/api/` or `apps/app/src/app/api/` run outsid
 
 - Cap body size while streaming `request.body` and cancel at the limit. A `Content-Length` check alone doesn't count. Read errors still return the handler's fixed response.
 - Verify provider signatures at the boundary, and test valid, missing, tampered, wrong-token and missing-secret cases through the real parse path.
+- Validate every payload field to its narrowest format, even behind a signature (an OTP is `^\d{6,10}$`), so a leaked secret cannot send arbitrary text through our mailer.
+- Route handlers miss the tRPC rate limit. Add one, or file a follow-up task and link it in the PR.
 - Return the shape the provider expects (e.g. Twilio: `<Response/>` with `text/xml`).
 - Never echo errors. Log via `@op/logging` (`logger.error(msg, { error })`) and return a fixed status.
 - Rate-limit outbound replies to unknown senders (e.g. Inngest `rateLimit` keyed on the sender).
@@ -115,5 +117,5 @@ See [references/lessons.md](references/lessons.md) for the PR history behind the
 - [ ] Types via `@op/api/encoders`, not `RouterOutput`
 - [ ] Query + mutation register matching channels; no client-side manual invalidate
 - [ ] Server cache purges awaited
-- [ ] Route handlers: streaming size cap, signature tests, no echoed errors
+- [ ] Route handlers: streaming size cap, signature tests, no echoed errors, narrow field formats, rate limit or linked follow-up
 - [ ] Uploads follow `references/file-uploads.md`

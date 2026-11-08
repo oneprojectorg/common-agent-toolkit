@@ -42,3 +42,4 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - `TenDigitsFluid` story rendered an unlabelled input (PR #2195)
 - Sidebar "See more" reported `aria-expanded=false` after expansion; new pages were not announced (PR #2234)
 - `EditableText` keeps `aria-label` with no `<label>`: the heading is the content (PR #2262)
+- VotingIntroDialog steps and VotingProgressStats counts changed with no mounted live region; wrapped the step content and the stats outside Suspense in `aria-live="polite"` (PR #2370, #2372)

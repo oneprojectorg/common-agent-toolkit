@@ -24,3 +24,6 @@
 - Merged-proposal like totals counted likes on hidden sources (PR #2183)
 - `assertVoteAccess` added nothing over `assertProfileAccess` with `ADMIN | VOTE`; removed (PR #2199)
 - `resolveProposalListScope` took a `skipAccessCheck` only the export set, unlike `listAllProposals`; dropped (PR #2303)
+- A bare SHOW on a private decision's line quoted the stored slug in its not-found reply, so a non-member learned it; the reply now echoes only a slug the texter typed (PR #2381)
+- Voting progress counted only directly assigned roles, so a vote cast through the public grant moved no turnout; getProfileIdsWithDecisionPermission now reports the public grant (PR #2371)
+- SMS reset and describe scripts found the account through `users.current_profile_id`, which targets the switched-to organization; switched to `users.profile_id` (PR #2395)
