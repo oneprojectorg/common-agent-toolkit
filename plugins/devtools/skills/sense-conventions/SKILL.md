@@ -37,6 +37,7 @@ This skill adds the rules reviewers keep catching on top of those. Past review i
 - The label of a stateful control tracks its state: `isSelected ? t('Advancing') : t('Advance')`.
 - `aria-expanded` goes only on a control that expands and collapses. A load-more button that shows after expansion drops it.
 - Announce items loaded without navigation with a polite `sr-only` count. Do not make the whole list live.
+- Mount a live region before its content changes. Put `aria-live="polite"` on a wrapper outside `Suspense` (not inside the fallback swap) or around a dialog's step content, and keep it when you swap a count for an animated one.
 - A field that stands in for its content (an inline-edited title, a search box) is named by `aria-label`. Other fields use `Field` + `FieldLabel` or `htmlFor`.
 - Sortable headers set `aria-sort`.
 - Render `<a>` only when there is a real `href`.

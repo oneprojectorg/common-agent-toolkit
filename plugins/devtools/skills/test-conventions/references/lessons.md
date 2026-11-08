@@ -40,3 +40,4 @@
 - A `phaseSettings` test literal failed the excess-property check that Vitest never ran (PR #2285)
 - Tests for the Liked filter went into a new `listProposalsLiked.test.ts`, not the unit's file (PR #2303)
 - New SMS voting unique indexes and CHECKs got DB tests that insert a violating row (PR #2399)
+- `gotoUntilVisible` could wait 60s inside a 60s test, so a real failure surfaced as a test timeout; the tests now set their own timeout (PR #2424)

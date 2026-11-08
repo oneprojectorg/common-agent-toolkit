@@ -83,6 +83,7 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - When a uniqueness rule spans rows that the feature lock does not cover (one phone number, many decisions), lock on the contended value before the holder check. Then the loser gets the validation error, not a unique-index 500.
 - For inserts, the unique index has to cover every column the JS check covers (see drizzle-migrations). A relationship invariant (no cycles, no chains, one edge per pair) needs an advisory lock over the sorted id pair.
 - A dedup or in-progress row written before an external call must be either written after success, rolled back by the transaction, or marked retryable and checked by the early return. Never catch and move on.
+- A new write path to an entity runs every side effect of its existing writer: cache invalidation after commit (`invalidateDecisionInstance`), transition rescheduling, channel publish. Diff the new path against the old writer.
 
 ## Validation and bounds
 
@@ -101,6 +102,7 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - Gate the next cursor on `cursorValue != null`, not truthiness (a score of 0 is valid).
 - A `timestamptz` cursor carries the full string. A JS `Date` drops microseconds, so the equality arm never matches and the id tie-breaker never engages.
 - Cap a list in SQL (`limit` plus a cursor). Do not read every row and slice in JS.
+- A list read marks an item it cannot derive (unreadable document, invalid cost) as unavailable instead of failing the whole page. Keep the strict check on the write that depends on it.
 - A bulk read (export, backfill, digest) loops until `next` is null. When it detects truncation, surface it through the flag the UI renders, not a log line. Name any hard `limit` cap where it's applied.
 - When resolving "the newest" row, filter to candidates whose config parent (phase, category, template) still exists before ordering.
 - Two calls that depend on each other only through a DB cascade look independent. Read what you need in one query (join), or comment the dependency so nobody moves them into `Promise.all`.

@@ -67,3 +67,5 @@ One line per lesson. Each one gives the incident behind a rule in SKILL.md.
 - An avatar upload unmounted the setup modal and lost unsaved edits (PR #2234)
 - A merged-away proposal stayed in `selectedIds` and blocked advancement (PR #2261)
 - Phase and budget edits saved a snapshot of the loaded settings, so they overwrote other edits; they now send scoped patches (PR #2403)
+- A crafted `?resume=like:<id>` link made a signed-in member like or follow without clicking; replay now needs a proof this browser saved before signup (PR #2427)
+- Resume replay announced "counted" before the like/follow write settled, so a rejected write looked successful; the hook now returns the write result (PR #2427)
