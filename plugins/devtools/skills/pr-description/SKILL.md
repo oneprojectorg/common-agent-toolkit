@@ -35,9 +35,13 @@ A one-line description for a one-line change is correct.
 
 - **Schema change → `erDiagram` (required).** Any PR that adds tables or changes relationships includes one, under `## Table structure`. Reviewers read it before the SQL (model: #1186).
 - **Cross-service or multi-step flow → `sequenceDiagram`; moved boundary or rewired data flow → `flowchart`.** Draw only the changed nodes and their neighbours. Skip a diagram one sentence already covers.
+- **Moved, split or rewired code → one `diff`-fenced tree.** Use it when the point is what changed inside a shape that already exists: files moved into a folder, a component split into parts, a call added to a chain. Mark added nodes with `+` and removed nodes with `-`, and give each node a short `//` note on its role. Keep it to one block of about 15 lines, with real names from the diff and only the nodes a reviewer needs. It is a map, not a file list. Put it directly after the paragraph, with no heading (model: #2475).
+- **What the reviewer can skip or assume.** One short sentence each. For a refactor: "Nothing visible changes." When a commit only moves or renames files: "The first commit only moves files, so reviewers can skip it." Split the commits so the sentence is true.
 - **Non-obvious root cause.** Name it when the bug class will recur (stale closure, race, cache-key drift) (model: #1176).
 - **Stacked PR.** First line: `Stacked on #NNNN (<what it adds>).`
 - **Follow-ups.** A `## Follow-ups (out of scope)` list, one concrete line each, only for work already in scope but deferred. File a task for anything non-trivial.
+
+One visual per PR at most. Most PRs get none.
 
 ## What stays out
 
@@ -54,4 +58,5 @@ A one-line description for a one-line change is correct.
 - [ ] The task link is on the last line
 - [ ] A schema PR has an `erDiagram`
 - [ ] A stacked PR names its parent on the first line
+- [ ] At most one visual, and a `diff` tree shows only the changed nodes and their neighbours
 - [ ] No test plan, diff walk-through, pasted metrics or marketing words
