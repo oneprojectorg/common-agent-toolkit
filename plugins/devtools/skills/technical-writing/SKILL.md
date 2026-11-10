@@ -30,6 +30,7 @@ Apply these rules to any prose a person reads. Other skills own their formats; f
 - Start with the answer. No intro, no outro, no build-up.
 - Never write: "It is important to note", "Crucially", "Keep in mind", "It is not just X, it is also Y", "Hope this helps".
 - Cut: "powerful", "seamless", "robust", "comprehensive", "simply", "just".
+- No metaphor or flourish. Say what you mean in literal words: "a parameter worth varying", not "a dial worth turning".
 
 | Do not write | Write |
 |---|---|
