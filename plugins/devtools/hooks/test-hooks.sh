@@ -17,6 +17,16 @@ done
 ON_DEV="$TMP/dev"
 ON_FEATURE="$TMP/feature"
 
+# A fake `gh` that reports PR 1 as based on main and every other PR on dev,
+# so the `gh pr merge` cases run without the network.
+mkdir -p "$TMP/bin"
+cat >"$TMP/bin/gh" <<'GH'
+#!/bin/bash
+if [ "$1 $2 $3" = "pr view 1" ]; then echo main; else echo dev; fi
+GH
+chmod +x "$TMP/bin/gh"
+export PATH="$TMP/bin:$PATH"
+
 check() {
   local want=$1 hook=$2 cwd=$3 command=$4
   printf '%s' "$command" | jq -Rs --arg cwd "$cwd" '{cwd: $cwd, tool_input: {command: .}}' \
@@ -92,6 +102,39 @@ check 0 $B "$ON_DEV" "git -C $ON_FEATURE commit -m fix"
 check 0 $B "$ON_DEV" 'git merge --ff-only origin/dev'
 check 0 $B "$ON_DEV" 'git log --grep commit'
 check 0 $B "$ON_DEV" 'git pull'
+
+# Quoted text and comments do not count.
+check 0 $B "$ON_FEATURE" 'git commit -m "docs: explain git reset --hard"'
+check 0 $B "$ON_FEATURE" "git commit -m 'never push to main'"
+check 0 $B "$ON_FEATURE" 'gh pr create --base dev --body "do not use --base main here"'
+check 0 $B "$ON_FEATURE" 'git push origin feature # rebased on dev'
+check 2 $B "$ON_FEATURE" 'git commit -m "x" && git reset --hard'
+
+# A push target only counts when it IS main/dev, not when it contains the word.
+check 0 $B "$ON_FEATURE" 'git push origin feat/dev'
+check 0 $B "$ON_FEATURE" 'git push origin feature --force-with-lease=feature:origin/dev'
+check 2 $B "$ON_FEATURE" 'git push origin feature:refs/heads/dev'
+check 2 $B "$ON_DEV" 'git push origin @'
+
+# Ending or asking about a rebase or merge on dev adds no commits.
+check 0 $B "$ON_DEV" 'git rebase --abort'
+check 0 $B "$ON_DEV" 'git merge --continue'
+check 0 $B "$ON_DEV" 'git commit --help'
+
+# Global options before the verb do not hide it.
+check 2 $B "$ON_DEV" 'git -c user.name=x commit -m fix'
+check 2 $B "$ON_DEV" 'git --no-pager commit -m fix'
+check 2 $B "$ON_FEATURE" "git -c x=y -C \"$ON_DEV\" commit -m fix"
+check 2 $B "$ON_FEATURE" "cd \"$ON_DEV\" && git commit -m fix"
+check 0 $B "$ON_DEV" 'git -c x=y push -u origin feat/x'
+
+# Merging a PR into main, or moving a PR's base to main, needs the marker.
+check 2 $B "$ON_FEATURE" 'gh pr merge 1 --squash'
+check 0 $B "$ON_FEATURE" 'gh pr merge 2 --squash'
+check 0 $B "$ON_FEATURE" 'CLAUDE_RELEASE=1 gh pr merge 1'
+check 2 $B "$ON_FEATURE" 'gh pr edit 12 --base main'
+check 2 $B "$ON_FEATURE" 'gh pr create -B main'
+check 0 $B "$ON_FEATURE" 'gh pr edit 12 --base dev'
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failure(s)"

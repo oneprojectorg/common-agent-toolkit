@@ -60,11 +60,13 @@ gh stack up | down | top | bottom                # move between layers
 
 `hooks/block-protected-branches.sh` blocks only commands that write to `main` or `dev`:
 
-- Commits while HEAD is `main`/`dev`: `git commit`, `cherry-pick`, `revert`, `am`, `rebase`, and `merge` (except `--ff-only`). HEAD is read where the command runs, so `cd <dir> &&` and `git -C <dir>` count.
-- `git push` that names `main`/`dev`, uses `--all`/`--mirror`, or pushes HEAD while HEAD is `main`/`dev`. No marker bypass.
+- Commits while HEAD is `main`/`dev`: `git commit`, `cherry-pick`, `revert`, `am`, `rebase`, and `merge` (except `--ff-only`, and `--abort`/`--continue`/`--skip`). HEAD is read where the command runs, so `cd <dir> &&` and `git -C <dir>` count.
+- `git push` whose target is `main`/`dev`, `--all`/`--mirror`, or a push of HEAD while HEAD is `main`/`dev`. No marker bypass.
 - `gh api` writes (`-X POST|PUT|PATCH|DELETE`, `-f`/`-F`/`--input`) that name `main`/`dev`.
 - Destructive operations: `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- <path>` / `git checkout .`. No marker bypass.
-- `gh pr create --base main`, unless prefixed `CLAUDE_RELEASE=1`. The marker is for the `release` skill only. Never use it anywhere else.
+- `gh pr create --base main`, `gh pr edit --base main` and `gh pr merge` of a PR into `main`, unless prefixed `CLAUDE_RELEASE=1`. The marker is for the `release` skill only. Never use it anywhere else.
+
+Text in quotes and after `#` does not count, so a commit message or PR body may mention `main` or `reset --hard`.
 
 Everything that only reads `main`/`dev` is allowed: `git fetch origin dev`, `git grep … origin/dev`, `git diff origin/main..HEAD`, `gh run list --branch dev`, `gh stack init --base dev`, `git checkout dev`.
 
