@@ -1,118 +1,154 @@
 #!/bin/bash
-# Block git/gh commands that write to protected branches (main, dev),
-# perform force pushes, or run destructive operations.
+# Block git/gh commands that WRITE to the protected branches (main, dev),
+# and destructive local operations. Commands that only read main/dev
+# (`git grep … origin/dev`, `gh run list --branch dev`, `gh stack init --base dev`)
+# are allowed. This hook is an early warning for agents; GitHub branch
+# protection is the real guard, so the hook prefers a missed write over
+# blocking normal work.
 #
-# Allowed:
-#   - `gh pr create --base dev`  — normal feature → dev PR
-#   - read-only inspection of dev/main only when prefixed with the
-#     `/release`-marker (`CLAUDE_RELEASE=1`)
-#   - `gh pr create --base main` only under the `/release` marker
+# Blocked:
+#   - commits while HEAD is main/dev: commit, cherry-pick, revert, am, rebase,
+#     merge (except --ff-only, and --abort/--continue/--skip/--quit/--help)
+#   - `git push` whose target is main/dev, `--all`/`--mirror`, or a push of
+#     HEAD while HEAD is main/dev
+#   - destructive ops: `reset --hard`, `clean -f`, `branch -D`, `checkout --`
+#   - `gh api` writes (-X POST/PUT/PATCH/DELETE, -f/-F/--input) that name main/dev
+#   - `gh pr create|edit --base main` and `gh pr merge` of a PR into main,
+#     unless prefixed `CLAUDE_RELEASE=1` (the /release flow)
 #
-# Always denied (no marker bypass):
-#   - `git push` targeting main/dev (incl. force-push)
-#   - destructive ops (`reset --hard`, `clean -f`, `branch -D`, `checkout --`)
+# Text in quotes and after `#` is ignored, so a commit message or PR body that
+# mentions main or `reset --hard` does not count. HEAD is read where the git
+# command runs: the session cwd, then any earlier `cd <dir>`, then `git -C <dir>`.
 #
-# Wired as a PreToolUse hook in .claude/settings.json.
+# Wired as a PreToolUse hook in hooks.json.
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+DIR=$(echo "$INPUT" | jq -r '.cwd // empty')
+DIR=${DIR:-${CLAUDE_PROJECT_DIR:-$PWD}}
 
-# The command with filesystem paths removed, for the protected-ref checks.
-# A path token starts with `/`, `~/` or `./` (`~/dev/op/common`, `2>/dev/null`);
-# a ref never does (`origin/dev`, `refs/heads/main`), so dropping those tokens
-# stops a directory named `dev` from reading as the branch.
-REFS_ONLY=$(echo "$COMMAND" | sed -E "s#(^|[[:space:]=<>|&;(\"'])(~|\.{1,2})?/[^[:space:]\"';|&)]*#\1#g")
-
-# git or gh invoked at start of line, or after a shell separator (; | & ()
-INVOKES_GIT_GH='(^|[;|&(]\s*)(git|gh)\s'
-
-# A protected branch ("main" or "dev") as a standalone ref token. Trailing
-# boundary also includes git ref suffix chars (. ~ ^ @) so ranges like
-# main...HEAD and dev~5 match.
-# Catches: main, dev, origin/main, --base dev, refs/heads/main,
-# main:refs/heads/x, dev...HEAD, main~5, dev^, main@{upstream}.
-# Not matched: domain, maintain, develop, development, devops.
-REFERENCES_PROTECTED='(^|[[:space:]=:/])(main|dev)([[:space:]=:/.~^@]|$)'
-
-# /release marker. Prefixed on the read + PR-create commands inside the
-# /release command so the hook lets them through.
+PROTECTED='(^|[[:space:]=:/+])(main|dev)([[:space:]=:/.~^@]|$)'
 RELEASE_MARKER='(^|[[:space:]])CLAUDE_RELEASE=1([[:space:]=]|$)'
+COMMIT_VERBS='^(commit|cherry-pick|revert|am|rebase|merge)$'
+# git, optional env prefixes, then global options (-c k=v, -C dir, --no-pager)
+# before the verb.
+GIT_RE='^[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+)*git(([[:space:]]+(-c|-C)[[:space:]]+[^[:space:]]+|[[:space:]]+--[a-z-]+(=[^[:space:]]*)?)*)[[:space:]]+([a-z-]+)(.*)$'
 
-# `gh pr create` targeting a protected branch as the PR base.
-GH_PR_CREATE_BASE_MAIN='gh\s+pr\s+create\s+(.*\s)?--base[[:space:]=]main(\s|$)'
-GH_PR_CREATE_BASE_DEV='gh\s+pr\s+create\s+(.*\s)?--base[[:space:]=]dev(\s|$)'
-
-DESTRUCTIVE_RESET='git\s+reset\s+(--hard|-{1,2}H)'
-DESTRUCTIVE_CLEAN='git\s+clean\s+(-[a-zA-Z]*f|--force)'
-DESTRUCTIVE_BRANCH_D='git\s+branch\s+(-[a-zA-Z]*D)'
-DESTRUCTIVE_CHECKOUT='git\s+checkout\s+(--|\.[[:space:]]|\.[[:space:]]*$)'
-
-# Read-only / local-sync git verbs. These don't write to the remote protected
-# branch — they read it, or pull it down into the current (feature) branch.
-# Allowing these means `git fetch origin dev`, `git rebase origin/dev`, and
-# `git diff origin/main..HEAD` work without the /release marker. Pushes and
-# destructive ops are still caught by the explicit checks above this.
-# Verbs that switch HEAD (checkout/switch/restore) are intentionally NOT
-# included — the agent shouldn't move onto main/dev.
-SAFE_GIT_VERBS='git\s+(fetch|pull|rebase|merge|diff|log|show|status|rev-parse|ls-remote|remote|blame|describe|shortlog|whatchanged|cat-file|for-each-ref|reflog|range-diff)\b'
-
-# Creating a NEW branch based on a protected ref is read-only on that ref and
-# never moves HEAD onto it. This is how implement-task starts every feature
-# branch (`git checkout -b issue-<gid> origin/dev`). Without this allowance,
-# agents blocked on `git checkout dev` fall back to a bare `git checkout -b`
-# from the current HEAD -- silently stacking each task on the previous branch.
-SAFE_BRANCH_CREATE='git\s+(checkout\s+-b|switch\s+-c)\s+[^[:space:]]+\s+(origin/)?(main|dev)([[:space:]]|$)'
-
-# Destructive ops are never allowed, even under /release.
-if echo "$COMMAND" | grep -qE "$DESTRUCTIVE_RESET|$DESTRUCTIVE_CLEAN|$DESTRUCTIVE_BRANCH_D|$DESTRUCTIVE_CHECKOUT"; then
-  echo "BLOCKED: destructive git operation (reset --hard, clean -f, branch -D, checkout --). Ask the user before running this." >&2
+block() {
+  echo "BLOCKED: $1" >&2
   exit 2
+}
+
+resolve() {
+  local path=${1//\"/}
+  path=${path//\'/}
+  path=${path/#\~/$HOME}
+  case "$path" in
+    /*) echo "$path" ;;
+    *) echo "$DIR/$path" ;;
+  esac
+}
+
+is_protected() {
+  [ "$1" = "main" ] || [ "$1" = "dev" ]
+}
+
+has_marker() {
+  echo "$COMMAND" | grep -qE "$RELEASE_MARKER"
+}
+
+if ! echo "$COMMAND" | grep -qE '(^|[^[:alnum:]_-])(git|gh)\s'; then
+  exit 0
 fi
 
-# Pushes targeting main/dev are never allowed, even under /release.
-if echo "$COMMAND" | grep -qE 'git\s+push' && echo "$REFS_ONLY" | grep -qE "$REFERENCES_PROTECTED"; then
-  echo "BLOCKED: pushing to 'main' or 'dev' is never allowed. Open a PR from a feature branch." >&2
-  exit 2
+# Empty every quoted string (except the directory after `cd` or `-C`) and drop
+# `#` comments.
+SCAN=$(printf '%s' "$COMMAND" | perl -0777 -pe '
+  s/(?<!cd )(?<!-C )"(?:[^"\\]|\\.)*"/""/g;
+  s/(?<!cd )(?<!-C )\x27[^\x27]*\x27/\x27\x27/g;
+  s/(^|[ \t])#[^\n]*/$1/mg;
+')
+
+DESTRUCTIVE='git\s+(reset\s+(--hard|-{1,2}H)|clean\s+(-[a-zA-Z]*f|--force)|branch\s+(-[a-zA-Z]*D)|checkout\s+(--|\.[[:space:]]|\.[[:space:]]*$))'
+if echo "$SCAN" | grep -qE "$DESTRUCTIVE"; then
+  block "destructive git operation (reset --hard, clean -f, branch -D, checkout --). Ask the user before running this."
 fi
 
-# `gh pr create --base main` is the dev → main release PR — only under the
-# /release marker. We check this before the generic protected-ref block so
-# the marker can let it through.
-if echo "$COMMAND" | grep -qE "$GH_PR_CREATE_BASE_MAIN"; then
-  if echo "$COMMAND" | grep -qE "$RELEASE_MARKER"; then
-    exit 0
+if echo "$SCAN" | grep -qE 'gh\s+pr\s+(create|edit)\s+(.*\s)?(--base|-B)[[:space:]=]main(\s|$)' && ! has_marker; then
+  block "a PR with base 'main' is only allowed inside the /release flow (prefix with CLAUDE_RELEASE=1)."
+fi
+
+# Check each shell segment on its own, so a protected name in one command
+# (`gh pr create --base dev`) does not count against another (`git push`).
+while IFS= read -r SEGMENT; do
+  if [[ "$SEGMENT" =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]]+) ]]; then
+    DIR=$(resolve "${BASH_REMATCH[1]}")
+    continue
   fi
-  echo "BLOCKED: 'gh pr create --base main' is only allowed inside the /release flow (prefix with CLAUDE_RELEASE=1)." >&2
-  exit 2
-fi
 
-# `gh pr create --base dev` is the normal feature → dev PR. Always allowed.
-if echo "$COMMAND" | grep -qE "$GH_PR_CREATE_BASE_DEV"; then
-  exit 0
-fi
+  # Drop filesystem paths (`~/dev/op/common`, `2>/dev/null`) so a directory
+  # named `dev` is not a branch. A ref never starts with `/`, `~/` or `./`.
+  REFS=$(echo "$SEGMENT" | sed -E "s#(^|[[:space:]=<>(\"'])(~|\.{1,2})?/[^[:space:]\"')]*#\1#g")
 
-# Creating a new branch FROM main/dev. Destructive ops and remote writes were
-# already filtered out above, so matching here is safe.
-if echo "$COMMAND" | grep -qE "$SAFE_BRANCH_CREATE"; then
-  exit 0
-fi
+  if [[ "$SEGMENT" =~ $GIT_RE ]]; then
+    GLOBAL_OPTS=${BASH_REMATCH[2]}
+    VERB=${BASH_REMATCH[6]}
+    REST=${BASH_REMATCH[7]}
+    RUN_DIR=$DIR
+    if [[ "$GLOBAL_OPTS" =~ -C[[:space:]]+([^[:space:]]+) ]]; then
+      RUN_DIR=$(resolve "${BASH_REMATCH[1]}")
+    fi
 
-# Read-only / local-sync ops referencing main/dev are allowed without the
-# /release marker. `git push` was already filtered out above, so this only
-# catches things like `git fetch origin dev`, `git rebase origin/dev`,
-# `git merge origin/dev`, `git pull origin dev`, `git diff origin/main..HEAD`.
-if echo "$COMMAND" | grep -qE "$SAFE_GIT_VERBS"; then
-  exit 0
-fi
+    if [[ "$VERB" =~ $COMMIT_VERBS ]] \
+      && ! [[ "$REST" =~ (^|[[:space:]])--(abort|continue|skip|quit|help)([[:space:]]|$) ]] \
+      && ! { [ "$VERB" = "merge" ] && [[ "$REST" =~ --ff-only ]]; }; then
+      BRANCH=$(git -C "$RUN_DIR" branch --show-current 2>/dev/null)
+      if is_protected "$BRANCH"; then
+        block "HEAD is '$BRANCH' in $RUN_DIR. 'git $VERB' would add commits to a protected branch. Switch to a feature branch first."
+      fi
+    fi
 
-# Generic protected-branch reference block (catches anything else that names
-# main/dev — e.g. `gh api repos/.../branches/dev`), with /release exception.
-if echo "$COMMAND" | grep -qE "$INVOKES_GIT_GH" && echo "$REFS_ONLY" | grep -qE "$REFERENCES_PROTECTED"; then
-  if echo "$COMMAND" | grep -qE "$RELEASE_MARKER"; then
-    exit 0
+    if [ "$VERB" = "push" ]; then
+      if [[ "$REST" =~ (^|[[:space:]])--(all|mirror)([[:space:]]|$) ]]; then
+        block "'git push --all/--mirror' would push 'main' or 'dev'. Push a feature branch instead."
+      fi
+      # Arguments without flags: the remote, then the refspecs.
+      read -r -a ARGS <<<"$(echo "$REST" | tr -s '[:space:]' '\n' | grep -v '^-' | grep -v '^$' | tr '\n' ' ')"
+      PUSHES_HEAD=0
+      [ "${#ARGS[@]}" -le 1 ] && PUSHES_HEAD=1
+      for REFSPEC in "${ARGS[@]:1}"; do
+        REFSPEC=${REFSPEC#+}
+        TARGET=${REFSPEC##*:}
+        TARGET=${TARGET#refs/heads/}
+        if is_protected "$TARGET"; then
+          block "pushing to '$TARGET' is never allowed. Open a PR from a feature branch."
+        fi
+        if [[ "$REFSPEC" =~ ^(HEAD|@)$ ]]; then
+          PUSHES_HEAD=1
+        fi
+      done
+      if [ "$PUSHES_HEAD" = 1 ]; then
+        BRANCH=$(git -C "$RUN_DIR" branch --show-current 2>/dev/null)
+        if is_protected "$BRANCH"; then
+          block "HEAD is '$BRANCH', so this push targets a protected branch. Push a feature branch instead."
+        fi
+      fi
+    fi
   fi
-  echo "BLOCKED: git/gh commands targeting 'main' or 'dev' are not allowed. Work on a feature branch and open a PR. (The /release command is the only exception, via the CLAUDE_RELEASE=1 marker.)" >&2
-  exit 2
-fi
+
+  if [[ "$SEGMENT" =~ (^|[[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]+(.*))?$ ]] && ! has_marker; then
+    PR=$(echo "${BASH_REMATCH[3]}" | tr -s '[:space:]' '\n' | grep -v '^-' | grep -v '^$' | head -1)
+    BASE=$(cd "$DIR" 2>/dev/null && gh pr view $PR --json baseRefName -q .baseRefName 2>/dev/null)
+    if [ "$BASE" = "main" ]; then
+      block "merging a PR into 'main' is only allowed inside the /release flow."
+    fi
+  fi
+
+  if echo "$SEGMENT" | grep -qE '(^|\s)gh\s+api\s' \
+    && echo "$SEGMENT" | grep -qE '(-X|--method)[[:space:]=]*(POST|PUT|PATCH|DELETE)|\s(-f|-F|--field|--raw-field|--input)(\s|=)' \
+    && echo "$REFS" | grep -qE "$PROTECTED"; then
+    block "'gh api' writes that name 'main' or 'dev' are not allowed."
+  fi
+done < <(echo "$SCAN" | sed -E 's/(&&|\|\||;|\|)/\n/g')
 
 exit 0

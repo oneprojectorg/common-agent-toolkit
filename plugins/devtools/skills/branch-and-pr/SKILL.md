@@ -58,14 +58,17 @@ gh stack up | down | top | bottom                # move between layers
 
 ## What the plugin hooks block
 
-`hooks/block-protected-branches.sh` (any Bash call that runs `git`/`gh`):
+`hooks/block-protected-branches.sh` blocks only commands that write to `main` or `dev`:
 
-- Always blocked, even with the marker: `git push` that names `main`/`dev` (including force); `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- <path>` / `git checkout .`.
-- Allowed: `gh pr create --base dev`; `git checkout -b|switch -c <branch> [origin/]dev`; read and local-sync verbs naming `main`/`dev` (`fetch`, `pull`, `rebase`, `merge`, `diff`, `log`, `show`, `status`, `rev-parse`, `ls-remote`, `blame`, `range-diff`, and similar).
-- Blocked unless prefixed `CLAUDE_RELEASE=1`: `gh pr create --base main`, and any other `git`/`gh` command that names `main`/`dev` (`git checkout dev`, `git switch main`, `gh api …/branches/dev`, `gh stack init --base dev`).
-- `CLAUDE_RELEASE=1` is for the `release` skill only. Never use it anywhere else.
+- Commits while HEAD is `main`/`dev`: `git commit`, `cherry-pick`, `revert`, `am`, `rebase`, and `merge` (except `--ff-only`, and `--abort`/`--continue`/`--skip`). HEAD is read where the command runs, so `cd <dir> &&` and `git -C <dir>` count.
+- `git push` whose target is `main`/`dev`, `--all`/`--mirror`, or a push of HEAD while HEAD is `main`/`dev`. No marker bypass.
+- `gh api` writes (`-X POST|PUT|PATCH|DELETE`, `-f`/`-F`/`--input`) that name `main`/`dev`.
+- Destructive operations: `git reset --hard`, `git clean -f`, `git branch -D`, `git checkout -- <path>` / `git checkout .`. No marker bypass.
+- `gh pr create --base main`, `gh pr edit --base main` and `gh pr merge` of a PR into `main`, unless prefixed `CLAUDE_RELEASE=1`. The marker is for the `release` skill only. Never use it anywhere else.
 
-`hooks/require-feature-branch.sh`: blocks `git commit` while HEAD is `main` or `dev`.
+Text in quotes and after `#` does not count, so a commit message or PR body may mention `main` or `reset --hard`.
+
+Everything that only reads `main`/`dev` is allowed: `git fetch origin dev`, `git grep … origin/dev`, `git diff origin/main..HEAD`, `gh run list --branch dev`, `gh stack init --base dev`, `git checkout dev`.
 
 In common, the project hook `.claude/hooks/block-gh-main.sh` also blocks every `git`/`gh` command that names `main`, with no marker exception (so `git diff origin/main..HEAD` fails there; diff against `origin/dev`).
 
