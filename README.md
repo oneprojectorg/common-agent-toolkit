@@ -90,8 +90,7 @@ Each convention skill ends with a `Review checklist`; past review incidents live
 
 ### Hooks (`PreToolUse` on `Bash`)
 
-- `block-protected-branches.sh` — refuses `git`/`gh` commands targeting `main` or `dev` (with the `CLAUDE_RELEASE=1` marker as the single dev → main PR exception).
-- `require-feature-branch.sh` — refuses commits while HEAD is on a protected branch.
+- `block-protected-branches.sh` — refuses `git`/`gh` commands that write to `main` or `dev`: commits while HEAD is `main`/`dev`, pushes to them, `gh api` writes that name them, and destructive operations. Commands that only read `main`/`dev` are allowed. `gh pr create --base main` needs the `CLAUDE_RELEASE=1` marker (the dev → main release PR). Tests: `bash plugins/devtools/hooks/test-hooks.sh`.
 
 ## Layout
 
@@ -107,7 +106,6 @@ common-agent-toolkit/
 │       └── hooks/
 │           ├── hooks.json
 │           ├── block-protected-branches.sh
-│           ├── require-feature-branch.sh
 │           └── test-hooks.sh
 ├── skill-audit/          # trigger evals (run-real-eval.py) and results
 ├── README.md
