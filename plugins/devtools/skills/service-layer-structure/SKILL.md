@@ -82,7 +82,7 @@ const { parentProfileId } = await assertCollectionAccess({ user, collectionId, p
 - A partial update to a JSON column merges in the one `UPDATE` (`coalesce(col, '{}') || jsonb_build_object(...)`). A read-modify-write in JS loses a concurrent save.
 - When a uniqueness rule spans rows that the feature lock does not cover (one phone number, many decisions), lock on the contended value before the holder check. Then the loser gets the validation error, not a unique-index 500.
 - For inserts, the unique index has to cover every column the JS check covers (see drizzle-migrations). A relationship invariant (no cycles, no chains, one edge per pair) needs an advisory lock over the sorted id pair.
-- A dedup or in-progress row written before an external call must be either written after success, rolled back by the transaction, or marked retryable and checked by the early return. Never catch and move on.
+- A dedup or in-progress row written before an external call must be either written after success, rolled back by the transaction, or marked retryable and checked by the early return. Never catch and move on. A Redis claim is a `SET NX`; release it with one atomic compare-and-delete, never a read then a delete. If the send after the claim fails or its reply times out, release the claim before you rethrow.
 - A new write path to an entity runs every side effect of its existing writer: cache invalidation after commit (`invalidateDecisionInstance`), transition rescheduling, channel publish. Diff the new path against the old writer.
 
 ## Validation and bounds
@@ -133,6 +133,7 @@ See [references/lessons.md](references/lessons.md) for the PR history behind the
 - [ ] Multi-row writes in a transaction; locks via `lockX`, sorted, matching the concurrent writer
 - [ ] Guard inputs re-read inside the transaction; gates re-asserted in the write's `WHERE`
 - [ ] Zero-rows / lock-miss paths surfaced with their own error
+- [ ] Claims taken atomically, released by compare-and-delete, and released when the following send fails
 - [ ] Byte caps use `TextEncoder`; tightened bounds accept stored rows
 - [ ] Cache reads `safeParse`d against the shared schema
 - [ ] No in-memory sort/filter of a paged set; unpaginated reads state their bound

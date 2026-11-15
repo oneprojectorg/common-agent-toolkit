@@ -32,6 +32,7 @@ Past review incidents, one line each: [references/lessons.md](references/lessons
 - The current behaviour is unprefixed: `DecisionHeader` and `LegacyDecisionHeader`, never `NewDecisionHeader`.
 - Destructure-local names (`rest`, `others`) do not survive past the spread. Rename: `const { config, ...savedFieldsWithoutConfig } = savedFields`.
 - An `assert*` name says what it asserts (`assertPhaseSettingsValid`, not `assertPhaseSettings`). A verb says what the function does (`sendText`, not `smsText`).
+- Do not use `load*`: it hides whether the function returns, checks or mutates. Use `get*` for a read and `assert*` for a check. A noun or a question names a value, not an action: `getBallotProposalFilter`, not `ballotProposalFilter`; `sendBallotNeedsDecisionMessage`, not `ballotNeedsDecision`.
 - Domain names over generic ones: `ProposalReviewCard`, not `Item` or `Card`. Exception: `@op/sense` primitives.
 - A file's name matches its primary export. In any module, the order is types, then the main export, then helpers.
 - Consistency over brevity: `maxVotesPerMember`, not `maxVotes`.
@@ -116,6 +117,7 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - The retry unit matches the side-effect unit. Use one `step.run` per batch, or a counted, logged gap with a follow-up. Never re-send to recipients who already got the message.
 - In a durable step, re-read a precondition for a side effect in the step that performs it. A provider result of `rejected` is a failure: throw. Do not only log it.
 - A retried step reaches the same result as the first attempt. Don't write the state the step branches on before its result is recorded; clear it in a later step. If a retry finds its write already applied, still run the follow-ups.
+- A deploy can resume a run on step results that the old code saved. Do not rename a step or add a required field to its result in place. Keep the old step id and shape, or add a new step and keep a path that still reads the old result.
 - An Inngest event id names the occurrence that caused it (the inbound message), not the row it changes. Inngest drops a repeated id, so `vote-revised-${voteSubmissionId}` loses the second revision.
 - When an optional part of a result fails (a signed URL, a locale lookup), return the main result without it. Log the failure, and time-box the read if the caller has a deadline. Fail closed is for security and gating values, not for decoration.
 
@@ -125,7 +127,7 @@ Common errors live in `packages/common/src/utils/error/index.ts`:
 - Delete a branch that the guard above makes unreachable by construction.
 - Do not add a guard for a failure nobody has seen in this repo. Name the failure you reproduced, or remove the guard.
 - Fail closed. Unparseable or ambiguous input to a security decision is denied.
-- Order destructive multi-step cleanup so that a partial failure leaves the safer residue.
+- Order destructive multi-step cleanup so that a partial failure leaves the safer residue. Delete what a write replaces (a ballot draft) only after the write succeeds. Schedule the expiry of a stored file right after its upload, before any later status write that can fail.
 - Fix the encoding, not the symptom. Make the representation unambiguous at the source. Reject an invalid value at the write, not with a render-side default.
 - Store a state as an explicit field. Never infer it from text a person can edit (a display name that matches `Participant N`).
 - A `??` fallback cannot tell "cleared" from "not resolved". Return a tagged result.
@@ -175,6 +177,7 @@ Common's `CLAUDE.md` owns the basics: `@op/logging` on the server (`ctx.logger` 
 - [ ] Persisted values are guarded before `Intl`/`URL`/date parsing. External ids are normalized at the parser
 - [ ] `logger.error(msg, { error })` for caught errors. No `console.*` in runtime code. No PII in fields
 - [ ] Retries match the side-effect unit. Durable steps re-read preconditions and treat `rejected` as failure
+- [ ] Renamed or reshaped durable steps still replay results saved before the deploy
 - [ ] No exported symbol without an importer. Zod-backed types use `z.infer`
 - [ ] No test-only code paths in runtime modules
 - [ ] No duplicated logic (third copy). No new helper that already exists. Undeclared imports are added to package.json
