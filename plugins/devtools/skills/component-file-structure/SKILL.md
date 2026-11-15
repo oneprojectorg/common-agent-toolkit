@@ -100,6 +100,7 @@ return (
 - A long prop list, or booleans that show or hide a region (`showScore`, `withActions`), means you should compose: let the caller pass the region.
 - A public prop never silently does nothing for some callers. Rename it, document it, or make it work for everyone.
 - A wrapper's props are a superset of the hook it wraps (for example `required`).
+- Do not add a wrapper component that only reads a hook or context and passes the values down as props. Read them in the component that uses them.
 - Do not expose two props that emit the same value.
 - Make a route segment's source required at the type level (no `/decisions/undefined/...`).
 - Key a label map on the enum (`Record<Status, string>`), with no `??` raw-value fallback.

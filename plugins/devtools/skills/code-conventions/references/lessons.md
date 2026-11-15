@@ -86,3 +86,7 @@ One line per lesson. Each rule is already in SKILL.md unless it is listed here o
 - A new schema field was spelled `enrolment`; code uses US spelling, and the shipped table gets renamed in a follow-up (PR #2386)
 - Ballot and vote scoping was built on "districts", a Columbus-only concept; a follow-up generalizes it to a taxonomy term and keeps processes without one working (PR #2389)
 - Onboarding detected anonymous participants with a regex on the profile name; the reviewer asked for an anonymity flag on the profile, which also lets "Participant" be translated (PR #2427)
+- `loadPricing` only asserted, and `ballotNeedsDecision` sent a message; the reviewer asked for `assert*`/`get*` and an action verb (PR #2392). `ballotProposalFilter` became `getBallotProposalFilter` (PR #2503, #2513)
+- The SUBMIT handler deleted the ballot draft before the submission was saved, so a failed step lost the draft (PR #2392)
+- Replacing `check-known-number` with `resolve-signup-context` stranded signups parked across the deploy; a compatible path was added (PR #2481). The same risk was flagged for new `phases` step results (PR #2429) and renamed AGREE steps (PR #2551)
+- A personal data export scheduled file deletion only after its status write, so a failed write kept the file; expiry now follows the upload (PR #2487)

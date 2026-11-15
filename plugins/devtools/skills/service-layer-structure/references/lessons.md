@@ -46,3 +46,4 @@
 - SMS helpers spread over `decision/` and `notification/` were grouped under `services/sms/` (PR #2199)
 - The phase endpoints wrote processInstances without clearing the decision caches or rescheduling pending transitions; both were added to match the builder save (PR #2240)
 - listBallotProposals threw when one proposal's cost could not be read, blocking the whole ballot; reads now return it as unpriced and submitVote stays strict (PR #2384)
+- Two export requests both passed `findRunningExport` and one job was skipped; the claim became `SET NX`, the release a compare-and-delete Lua script, and a failed `event.send` releases the claim (PR #2487)
